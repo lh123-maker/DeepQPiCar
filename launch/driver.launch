@@ -1,0 +1,9 @@
+<launch>
+
+  <group ns="xiaocar_motor_publisher">
+    <node pkg="xiaocar" name="motors" type="motor_publisher.py"/>
+  </group>
+
+</launch>
+
+

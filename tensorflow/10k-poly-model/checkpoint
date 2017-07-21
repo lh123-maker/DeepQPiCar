@@ -1,0 +1,2 @@
+model_checkpoint_path: "ploy_distance_10k_epoch-10000"
+all_model_checkpoint_paths: "ploy_distance_10k_epoch-10000"

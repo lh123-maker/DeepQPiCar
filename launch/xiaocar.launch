@@ -1,0 +1,10 @@
+<launch>
+
+  <group ns="xiaocar1">
+    <node pkg="xiaocar" name="bot" type="motor_controller.py"/>
+    <node pkg="xiaocar" name="jpeg" type="image_publisher.py"/>
+  </group>
+
+
+</launch>
+

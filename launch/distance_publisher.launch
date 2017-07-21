@@ -1,0 +1,8 @@
+<launch>
+
+  <group ns="xiaocar_cm_publisher">
+    <node pkg="xiaocar" name="distance_listener" type="distance_publisher.py"/>
+  </group>
+
+</launch>
+
