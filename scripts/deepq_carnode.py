@@ -189,13 +189,28 @@ class DeepQPiCar(object):
             return None
 
         if self.terminal_frame:
-            # self._implement_recovery()
+            self._implement_recovery()
             self.last_state = None
             return observation
 
         # update the old values
         self.last_state = self.current_state
         return observation
+
+    def _implement_recovery(self):
+        self.driver.motors(0,0)
+        time.sleep(3)
+        self.driver.motors(0,0)
+        # move backwards
+        self.driver.motors(-100,-100)
+        time.sleep(2)
+        self.driver.motors(-100,-75)
+        time.sleep(2)
+        self.driver.motors(-75,-100)
+        time.sleep(2)
+        self.driver.motors(0,0)
+        time.sleep(2)
+        
 
     def _set_observation(self):
         """ """
