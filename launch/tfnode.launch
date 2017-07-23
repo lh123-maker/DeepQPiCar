@@ -1,0 +1,6 @@
+<launch>
+  <group ns="tfbox">
+    <node pkg="DeepQPiCar" name="tfnode" type="deepq_tfnode.py"/>
+  </group>
+</launch>
+
