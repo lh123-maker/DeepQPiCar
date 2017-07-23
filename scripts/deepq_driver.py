@@ -50,7 +50,7 @@ import numpy as np
 from std_msgs.msg import String, Bool
 import matplotlib.image as mpimg
 
-import tf_utils
+from tensorflow_utils import TensorFlowUtils
 
 class DeepQPiCar(object):
     """ """
@@ -104,6 +104,7 @@ class DeepQPiCar(object):
         self.camera.capture(self.output, 'rgb')
 
         frame = np.array(self.output.array)
+        frame = frame[-120:,:,:]
         frame = (frame-np.min(frame))/(np.max(frame)-np.min(frame))
 
         self.output.truncate(0)
@@ -184,15 +185,12 @@ class DeepQPiCar(object):
             obs = self._set_observation()
 
             if obs:
-                self._publish()
+                self._publish(obs)
             else:
                 while self._wait:
                     self._train()
                     time.sleep(5)
                     self._publish_train = False
 
-
 if __name__ == '__main__':
     main()
-
-
