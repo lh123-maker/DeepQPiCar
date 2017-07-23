@@ -22,8 +22,10 @@ class AStar(object):
     byte_list = [self.bus.read_byte(20) for _ in range(size)]
     return struct.unpack(format, bytes(byte_list))
 
-  def write_pack(self, address, format, *data):
-    data_array = list(struct.pack(format, *data))
+  def write_pack(self, address, _format, *data):
+    data_array = map(ord, struct.pack('hh', *data))
+    # print(data_array)
+    # print(type(data_array))
     self.bus.write_i2c_block_data(20, address, data_array)
     time.sleep(0.0001)
 
@@ -33,7 +35,7 @@ class AStar(object):
   def play_notes(self, notes):
     self.write_pack(24, 'B15s', 1, notes.encode("ascii"))
 
-  def set_motors(self, left, right):
+  def motors(self, left, right):
     self.write_pack(6, 'hh', left, right)
 
   def read_buttons(self):

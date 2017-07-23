@@ -46,6 +46,9 @@ import random
 import rospy
 import time
 
+from collections import deque
+
+import cv2
 import picamera
 import picamera.array
 import numpy as np
@@ -56,19 +59,21 @@ import matplotlib.image as mpimg
 from tensorflow_utils import TensorFlowUtils
 from a_star import AStar
 
+import random
+weighted_choice = lambda s : random.choice(sum(([v]*wt for v,wt in s),[]))
+
 class DeepQPiCar(object):
     """ """
     LEARN_RATE = 1e-4
     ACTIONS_COUNT = 4  # number of valid actions. In this case forward, backward, right, left
-    NO_DX_COUNT = 4 # number of times there's no change in distance before assuming crash
+    NO_DX_COUNT = 2 # number of times there's no change in distance before assuming crash
     # number which helps decide the probability of random action
     # formula is bool(EPSILON_CALCULATE/2 - random.randint(0, EPSILON_CALCULATE))
-    # e.g bool(10/2 - 4) = True => take random action
-    EPSILON_CALCULATE = 10 
+    # e.g bool(10/2 - 4) = True => take random action 
     MEMORY_SIZE = 50000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
     OBSERVATION_STEPS = 5000.  # time steps to observe before training
-    NO_DX_MEASUREMENT = 0.1 # dx in distance that's not considered forward motion
+    NO_DX_MEASUREMENT = 0.2 # dx in distance that's not considered forward motion
     MINI_BATCH_SIZE = 100  # size of mini batches
     STORE_SCORES_LEN = 200.
     SAVE_EVERY_X_STEPS = 1000
@@ -76,6 +81,8 @@ class DeepQPiCar(object):
     FUTURE_REWARD_DISCOUNT = 0.99  # decay rate of past observations
     FINAL_RANDOM_ACTION_PROB = 0.05  # final chance of an action being random
     INITIAL_RANDOM_ACTION_PROB = 1.0  # starting chance of an action being random
+
+    CHOICES = [(False, 80), (True, 20)]
     OBSlast_state_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
 
     _tf = TensorFlowUtils()
@@ -86,18 +93,21 @@ class DeepQPiCar(object):
 
         self.rate = rospy.Rate(2) # send 2 observations per second
         self.camera = picamera.PiCamera()
-        self.output = picamera.array.PiRGBArray(camera)
+        self.output = picamera.array.PiRGBArray(self.camera)
 
         self.last_state = None
         self.crashed = False
         self.nodx_counter = 0
         self.distance_from_router = 0.
+        self.observations = deque()
 
-        self.camera.resolution = (640, 480)
-        self.camera.color_effects = (128,128) # turn camera to black and white
+        self.width = 640
+        self.height = 480
+        self.camera.resolution = (self.width, self.height)
+        # self.camera.color_effects = (128,128) # turn camera to black and white
         picamera.array.PiRGBArray(self.camera)
 
-        self.trainer = rospy.Publisher('/pi_car/start_training', Bool)
+        self.trainer = rospy.Publisher('/pi_car/start_training', Bool, queue_size=1)
 
         self.pub = rospy.Publisher('/pi_car/observation',
             String,
@@ -106,6 +116,8 @@ class DeepQPiCar(object):
 
         rospy.Subscriber('/pi_car/cmd_resume', Bool, self.resume)
 
+        self._run = True
+        self.count_since_crash = 1
         self.driver = AStar()
 
     def resume(self, msg):
@@ -119,7 +131,8 @@ class DeepQPiCar(object):
         self.camera.capture(self.output, 'rgb')
 
         frame = np.array(self.output.array)
-        frame = frame[-120:,:,:]
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame = frame[-120:,:]
         frame = (frame-np.min(frame))/(np.max(frame)-np.min(frame))
 
         self.output.truncate(0)
@@ -151,12 +164,14 @@ class DeepQPiCar(object):
             self.current_state = np.stack(tuple(self._get_normalized_frame() for _ in range(self.STATE_FRAMES)), axis=2)
 
         else:
-            self.change = bool(EPSILON_CALCULATE - random.randint(0, EPSILON_CALCULATE))
+            self.change = weighted_choice(self.CHOICES)
             if self.change:
                 self.last_action = np.zeros(self.ACTIONS_COUNT)
-                self.last_action[random.randint(0, ACTIONS_COUNT-1)] = 1
+                self.last_action[random.randint(0, self.ACTIONS_COUNT-1)] = 1
 
-            self.current_state = np.append(self.last_state[:, :, 1:], self._get_normalized_frame(), axis=2)
+            frame = self._get_normalized_frame()
+            frame = np.reshape(frame, (120, self.width, 1))
+            self.current_state = np.append(self.last_state[:, :, 1:], frame, axis=2)
 
     def _set_terminal_frame(self):
         self.terminal_frame = False
@@ -174,12 +189,12 @@ class DeepQPiCar(object):
             return None
 
         if self.terminal_frame:
-            self._implement_recovery()
+            # self._implement_recovery()
             self.last_state = None
             return observation
 
         # update the old values
-        self.last_state = current_state
+        self.last_state = self.current_state
         return observation
 
     def _set_observation(self):
@@ -197,7 +212,7 @@ class DeepQPiCar(object):
             self.terminal_frame)
 
         self.observations.append(observation)
-        self.last_state = current_state
+        self.last_state = self.current_state
 
         if len(self.observations) > self.MEMORY_SIZE:
             self.observations.popleft()
@@ -206,11 +221,12 @@ class DeepQPiCar(object):
 
     def _publish(self, obs):
         """ """
+        msg = String()
         data = pickle.dumps(obs)
         msg.data = base64.b64encode(data)
 
         self.pub.publish(msg)
-        rate.sleep()
+        self.rate.sleep()
 
     def _train(self):
         msg = Bool()
@@ -221,23 +237,23 @@ class DeepQPiCar(object):
 
     def _move(self, action):
         if action == 0: # move forward
-            self.driver.set_motors(50, 50)
+            self.driver.motors(50,50)
         elif action == 1: # move backward
-            self.driver.set_motors(-50, -50)
+            self.driver.motors(-50,-50)
         elif action == 2: # move right
-            self.driver.set_motors(60, 40)
+            self.driver.motors(60,40)
         else:# move left
-            self.driver.set_motors(40, 60)
+            self.driver.motors(40,60)
 
     def run(self):
         """ """
         while self._run:
-            msg = String()
             obs = self._set_observation()
 
             if obs:
-                self._move(np.max(self.last_action))
+                self._move(np.argmax(self.last_action))
                 self._publish(obs)
+                time.sleep(2.5)
             else:
                 while self._wait:
                     self._train()
@@ -245,4 +261,5 @@ class DeepQPiCar(object):
                     self._publish_train = False
 
 if __name__ == '__main__':
-    main()
+    node = DeepQPiCar()
+    node.run()

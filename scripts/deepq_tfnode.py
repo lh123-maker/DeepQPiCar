@@ -37,6 +37,7 @@ Attributes:
     RECORDS (deque): List of Record objects each representing a parsed record.
 
 """
+import time
 import pickle
 import base64
 
@@ -61,7 +62,7 @@ class DeepQTFNode(object):
 
         rospy.Subscriber('/pi_car/start_training', Bool, self._train_callback)
 
-        self.publisher = rospy.Publisher('/pi_car/cmd_resume', Bool)
+        self.publisher = rospy.Publisher('/pi_car/cmd_resume', Bool, queue_size=1)
 
     def _observation_callback(self, msg):
         """ """
@@ -72,6 +73,7 @@ class DeepQTFNode(object):
     def _train_callback(self, msg):
         """ """
         if msg.data:
+            print("beginning training.  have collected {} observations".format(len(self._tf.observations)))
             self._tf.train_cnn()
             self.publish_resume()
 
