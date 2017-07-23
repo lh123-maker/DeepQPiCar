@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 @author: Sam Mohamed
+
+# This is heavily based off https://github.com/DanielSlater/PyGamePlayer/
+
 The DeepQPi class is a ROS node that's both a publisher and listener, which together
 control the motion of the car in the environment and apply the policy during training.
 
@@ -56,9 +59,11 @@ class DeepQPiCar(object):
     """ """
     LEARN_RATE = 1e-4
     ACTIONS_COUNT = 4  # number of valid actions. In this case forward, backward, right, left
+    NO_DX_COUNT = 4 # number of times there's no change in distance before assuming crash
     MEMORY_SIZE = 500000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
     OBSERVATION_STEPS = 50000.  # time steps to observe before training
+    NO_DX_MEASUREMENT = 0.1 # dx in distance that's not considered forward motion
     MINI_BATCH_SIZE = 100  # size of mini batches
     STORE_SCORES_LEN = 200.
     SAVE_EVERY_X_STEPS = 1000
@@ -66,23 +71,26 @@ class DeepQPiCar(object):
     FUTURE_REWARD_DISCOUNT = 0.99  # decay rate of past observations
     FINAL_RANDOM_ACTION_PROB = 0.05  # final chance of an action being random
     INITIAL_RANDOM_ACTION_PROB = 1.0  # starting chance of an action being random
-    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX = range(4)
+    OBSlast_state_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
 
-    rate = rospy.Rate(10) # 10hz
-    camera = picamera.PiCamera()
-    output = picamera.array.PiRGBArray(camera)
+    _tf = TensorFlowUtils()
 
     def __init__(self):
         """ """
-        rospy.init_node('deepq_pi_car')
+        rospy.init_node('deepq_carnode')
 
-        self._last_state = None
-        self._crashed = False
-        self._distance_from_router = 0.
+        self.rate = rospy.Rate(10) # 10hz
+        self.camera = picamera.PiCamera()
+        self.output = picamera.array.PiRGBArray(camera)
+
+        self.last_state = None
+        self.crashed = False
+        self.nodx_counter = 0
+        self.distance_from_router = 0.
 
         self.camera.resolution = (640, 480)
         self.camera.color_effects = (128,128) # turn camera to black and white
-        picamera.array.PiRGBArray(camera)
+        picamera.array.PiRGBArray(self.camera)
 
         self.trainer = rospy.Publisher('/pi_car/start_training', Bool)
 
@@ -111,23 +119,25 @@ class DeepQPiCar(object):
 
         return frame
 
+    def _set_dx_distance(self):
+        """ """
+        current_distance = self._tf.calc_distance_from_router()
+        self.dx_distance = abs(self.distance_from_router - current_distance)
+        self.distance_from_router = current_distance
+
     def _calculate_reward(self):
         """ """
-        current_distance = tf_utils.calc_distance_from_router()
-        dx_distance = abs(self._distance_from_router - current_distance)
-        self._distance_from_router = current_distance
-
-        if self._crashed:
-            self._crashed = False
-            self._count_since_crash = 1
+        if self.crashed:
+            self.crashed = False
+            self.count_since_crash = 1
             return dx_distance
 
-        return .5*self._count_since_crash*dx_distance + dx_distance
+        return .5*self.count_since_crash*dx_distance + dx_distance
 
     def _set_state_and_action(self):
         """ """
         # first frame must be handled differently
-        if self._last_state is None:
+        if self.last_state is None:
             self._last_action = np.zeros(self.ACTIONS_COUNT)
             self._last_action[0] = 1 # move forward
             current_state = np.stack(tuple(self._get_normalized_frame() for _ in range(self.STATE_FRAMES)), axis=2)
@@ -135,32 +145,47 @@ class DeepQPiCar(object):
         else:
             self._last_action = np.zeros(self.ACTIONS_COUNT)
             self._last_action[random.randint(0,3)] = 1 # move forward
-            current_state = np.append(self._last_state[:, :, 1:], self._get_normalized_frame(), axis=2)
+            current_state = np.append(self.last_state[:, :, 1:], self._get_normalized_frame(), axis=2)
 
     def _set_observation(self):
         """ """
+        self._set_dx_distance()
         self._set_state_and_action()
 
+        self.terminal_frame = False
+
+        if self.dx_distance < self.NO_DX_MEASUREMENT:
+            self.nodx_counter += 1
+            if self.nodx_counter == self.NO_DX_COUNT:
+                self.nodx_counter = 0
+                self.terminal_frame = True
+
         observation = (
-            self._last_state,
+            self.last_state,
             self._last_action,
             self._calculate_reward(),
-            current_state)
+            current_state, 
+            self.terminal_frame)
 
-        self._observations.append(observation)
-        self._last_state = current_state
+        self.observations.append(observation)
+        self.last_state = current_state
 
-        if len(self._observations) > self.MEMORY_SIZE:
-            self._observations.popleft()
+        if len(self.observations) > self.MEMORY_SIZE:
+            self.observations.popleft()
 
         # only train if done observing
-        if len(self._observations) > self.OBSERVATION_STEPS:
+        if len(self.observations) > self.OBSERVATION_STEPS:
             self._run = False
             self._time += 1
             return None
 
+        if self.terminal_frame:
+            self._implement_recovery()
+            self.last_state = None
+            return observation
+
         # update the old values
-        self._last_state = current_state
+        self.last_state = current_state
         return observation
 
     def _publish(self, obs):

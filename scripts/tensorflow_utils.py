@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+@author: Sam Mohamed
+
+# This is heavily based off https://github.com/DanielSlater/PyGamePlayer/
+
+"""
 import os
 from collections import deque
 
@@ -5,27 +13,30 @@ import tensorflow as tf
 
 import utils
 
-Y_pred = None
-input_layer, output_layer = None, None
-
-
-def train_cnn():
-    pass
-
-
 class TensorFlowUtils(object):
 
-    def __init__(self):
-        
-        self.observations = deque()
-        self.Y_pred, self.poly_session = _create_ploy_graph()
+    
+    img_width = 120
+    img_height = 120
+    state_frames = 4
+    actions_count = 4
 
-    def calc_distance_from_router():
+    observations = deque()
+
+    mini_batch_size = 100
+
+    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX = range(4)
+
+    def __init__(self):
+        """ """
+        self.Y_pred, self.poly_session = self._create_ploy_graph()
+
+    def calc_distance_from_router(self):
         """ """
         signal_level = utils.get_signal_level_from_router('wlan0')
         return self.Y_pred.eval(feed_dict={X:signal_level}, session=self.poly_session)[0]
 
-    def _create_poly_graph():
+    def _create_poly_graph(self):
         """ """
         model = '10k-poly-model/poly_distance_10k_epoch-10000'
 
@@ -47,9 +58,9 @@ class TensorFlowUtils(object):
 
         return Y_pred, sess
 
-    def _create_convolutional_network(state_frames, actions_count):
-        # network weights
-        convolution_weights_1 = tf.Variable(tf.truncated_normal([8, 8, state_frames, 32], stddev=0.01))
+    def _create_convolutional_network(self):
+        """ """
+        convolution_weights_1 = tf.Variable(tf.truncated_normal([8, 8, self.state_frames, 32], stddev=0.01))
 
         convolution_bias_1 = tf.Variable(tf.constant(0.01, shape=[32]))
         convolution_weights_2 = tf.Variable(tf.truncated_normal([4, 4, 32, 64], stddev=0.01))
@@ -61,10 +72,10 @@ class TensorFlowUtils(object):
         feed_forward_weights_1 = tf.Variable(tf.truncated_normal([256, 256], stddev=0.01))
         feed_forward_bias_1 = tf.Variable(tf.constant(0.01, shape=[256]))
 
-        feed_forward_weights_2 = tf.Variable(tf.truncated_normal([256, actions_count], stddev=0.01))
-        feed_forward_bias_2 = tf.Variable(tf.constant(0.01, shape=[actions_count]))
+        feed_forward_weights_2 = tf.Variable(tf.truncated_normal([256, self.actions_count], stddev=0.01))
+        feed_forward_bias_2 = tf.Variable(tf.constant(0.01, shape=[self.actions_count]))
 
-        input_layer = tf.placeholder("float", [None, width, height, state_frames])
+        self.input_layer = tf.placeholder("float", [None, self.img_width, self.img_height, self.state_frames])
 
         hidden_convolutional_layer_1 = tf.nn.relu(
             tf.nn.conv2d(input_layer, convolution_weights_1, strides=[1, 4, 4, 1], padding="SAME") + convolution_bias_1)
@@ -91,6 +102,34 @@ class TensorFlowUtils(object):
         final_hidden_activations = tf.nn.relu(
             tf.matmul(hidden_convolutional_layer_3_flat, feed_forward_weights_1) + feed_forward_bias_1)
 
-        output_layer = tf.matmul(final_hidden_activations, feed_forward_weights_2) + feed_forward_bias_2
+        self.output_layer = tf.matmul(final_hidden_activations, feed_forward_weights_2) + feed_forward_bias_2
 
-        return input_layer, output_layer
+    def train_cnn(self):
+        """ """
+        # sample a mini_batch to train on
+        mini_batch = random.sample(self.observations, self.mini_batch_size)
+        # get the batch variables
+        previous_states = [d[self.OBS_LAST_STATE_INDEX] for d in mini_batch]
+        actions = [d[self.OBS_ACTION_INDEX] for d in mini_batch]
+        rewards = [d[self.OBS_REWARD_INDEX] for d in mini_batch]
+        current_states = [d[self.OBS_CURRENT_STATE_INDEX] for d in mini_batch]
+        agents_expected_reward = []
+        # this gives us the agents expected reward for each action we might
+        agents_reward_per_action = self._session.run(self.output_layer, feed_dict={self.input_layer: current_states})
+        for i in range(len(mini_batch)):
+            if mini_batch[i][self.OBS_TERMINAL_INDEX]:
+                # this was a terminal frame so there is no future reward...
+                agents_expected_reward.append(rewards[i])
+            else:
+                agents_expected_reward.append(
+                    rewards[i] + self.FUTURE_REWARD_DISCOUNT * np.max(agents_reward_per_action[i]))
+
+        # learn that these actions in these states lead to this reward
+        self._session.run(self._train_operation, feed_dict={
+            self._input_layer: previous_states,
+            self._action: actions,
+            self._target: agents_expected_reward})
+
+        # save checkpoints for later
+        if self._time % self.SAVE_EVERY_X_STEPS == 0:
+            self._saver.save(self._session, self._checkpoint_path + '/network', global_step=self._time)
