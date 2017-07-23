@@ -1,40 +1,52 @@
 #!/usr/bin/env python
-import ast
-import atexit
+# -*- coding: utf-8 -*-
+"""
+@author: Sam Mohamed
+
+The DeepQPi class is a ROS node that's both a publisher and listener, which together
+control the motion of the car in the environment and apply the policy during training.
+
+Motion in a random action using an epsilon-greedy implementation of random direction.
+
+Rewards are calculated based on the differential in the distance moved from one action
+to the next.  Therefore continous motion is more highly rewarded.
+
+The state is represented in four images collected from the front camera.  Actions are
+one movement of forward, right, left or reverse.  State to action mappings are recorded
+as observations with the reward and published using the ROS system.
+
+After a number of published observations, the module publishes to start ConvNet training
+on a mini batch of the total observations and stops motion and data collection.
+
+The subscriber waits for messages that the training is complete and resumes motion and
+and observation publishing.
+
+Usage:
+    usage::
+        $ roslaunch deepqpicar training.launch
+Attributes:
+    HEADTER (tuple): First element in tuple holds the Numpy dtype object
+        representing the header of the transaction file.
+        Second element in tuple holds the big-endian length in bytes.
+    CC_DB (tuple): First element in tuple holds the Numpy dtype object
+        representing credit and debit card transactions.
+        Second element in tuple holds the big-endian length in bytes.
+    AUTO_PAY (tuple): First element in tuple holds the Numpy dtype object
+        representing autopay transactions.
+        Second element in tuple holds the big-endian length in bytes.
+    RECORDS (deque): List of Record objects each representing a parsed record.
+
+"""
 import pickle
-import datetime
+import base64
 
 import rospy
 
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 
-global_data = dict()
+from tensorflow_utils import TensorFlowUtils
 
-def callback(data):
-    global global_data
-    d = ast.literal_eval(data.data)
-    global_data.update(d)
- 
-def save_to_file():
-    global global_data
-    
-    print 'saving data to pickle'
-
-    with open('/home/sameh/distance_data/{}.p'.format(datetime.datetime.now()), 'wb') as _f:
-        pickle.dump(global_data, _f, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-def listener():
-    atexit.register(save_to_file)
-
-    rospy.init_node('observation_listener', anonymous=True)
-
-    rospy.Subscriber("/distance_cm", String, callback)
-
-    rospy.spin()
-
-
-class DeepQListener(object):
+class DeepQTFNode(object):
     """ """
 
     _tf = TensorFlowUtils()
@@ -61,11 +73,19 @@ class DeepQListener(object):
         """ """
         if msg.data:
             self._tf.train_cnn()
+            self.publish_resume()
 
-    def publisher_resume(self):
+    def publish_resume(self):
         """ """
+        msg = Bool()
+        msg.data = True
+        self.publisher.publisher(msg)
 
+    def run(self):
+        # imitate a thread
+        while True:
+            time.sleep(1)
 
 if __name__ == '__main__':
-    listener()
-
+    node = DeepQTFNode()
+    node.run()

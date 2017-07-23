@@ -2,7 +2,7 @@ import smbus
 import struct
 import time
 
-class AStar:
+class AStar(object):
   def __init__(self):
     self.bus = smbus.SMBus(1)
 
@@ -33,7 +33,7 @@ class AStar:
   def play_notes(self, notes):
     self.write_pack(24, 'B15s', 1, notes.encode("ascii"))
 
-  def motors(self, left, right):
+  def set_motors(self, left, right):
     self.write_pack(6, 'hh', left, right)
 
   def read_buttons(self):

@@ -54,6 +54,7 @@ from std_msgs.msg import String, Bool
 import matplotlib.image as mpimg
 
 from tensorflow_utils import TensorFlowUtils
+from a_star import AStar
 
 class DeepQPiCar(object):
     """ """
@@ -83,7 +84,7 @@ class DeepQPiCar(object):
         """ """
         rospy.init_node('deepq_carnode')
 
-        self.rate = rospy.Rate(10) # 10hz
+        self.rate = rospy.Rate(2) # send 2 observations per second
         self.camera = picamera.PiCamera()
         self.output = picamera.array.PiRGBArray(camera)
 
@@ -104,6 +105,8 @@ class DeepQPiCar(object):
             latch=True)
 
         rospy.Subscriber('/pi_car/cmd_resume', Bool, self.resume)
+
+        self.driver = AStar()
 
     def resume(self, msg):
         """ """
@@ -216,6 +219,16 @@ class DeepQPiCar(object):
         if self._publish_train:
             self.trainer.publish(msg)
 
+    def _move(self, action):
+        if action == 0: # move forward
+            self.driver.set_motors(50, 50)
+        elif action == 1: # move backward
+            self.driver.set_motors(-50, -50)
+        elif action == 2: # move right
+            self.driver.set_motors(60, 40)
+        else:# move left
+            self.driver.set_motors(40, 60)
+
     def run(self):
         """ """
         while self._run:
@@ -223,6 +236,7 @@ class DeepQPiCar(object):
             obs = self._set_observation()
 
             if obs:
+                self._move(np.max(self.last_action))
                 self._publish(obs)
             else:
                 while self._wait:

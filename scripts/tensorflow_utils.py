@@ -25,11 +25,12 @@ class TensorFlowUtils(object):
 
     mini_batch_size = 100
 
-    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX = range(4)
+    FUTURE_REWARD_DISCOUNT = 0.1 # decay rate of past observations
+    OBSlast_state_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
 
     def __init__(self):
         """ """
-        self.Y_pred, self.poly_session = self._create_ploy_graph()
+        self.Y_pred, self.poly_session = self._create_poly_graph()
 
     def calc_distance_from_router(self):
         """ """
@@ -38,7 +39,7 @@ class TensorFlowUtils(object):
 
     def _create_poly_graph(self):
         """ """
-        model = '10k-poly-model/poly_distance_10k_epoch-10000'
+        model = 'models/25k-poly-model-1e-3/25k-poly-model-1e-3'
 
         tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
@@ -117,8 +118,8 @@ class TensorFlowUtils(object):
         # this gives us the agents expected reward for each action we might
         agents_reward_per_action = self._session.run(self.output_layer, feed_dict={self.input_layer: current_states})
         for i in range(len(mini_batch)):
-            if mini_batch[i][self.OBS_TERMINAL_INDEX]:
-                # this was a terminal frame so there is no future reward...
+            if mini_batch[i][self.OBS_CRASH_INDEX]:
+                # this was a crash frame so there is no future reward...
                 agents_expected_reward.append(rewards[i])
             else:
                 agents_expected_reward.append(
