@@ -60,9 +60,13 @@ class DeepQPiCar(object):
     LEARN_RATE = 1e-4
     ACTIONS_COUNT = 4  # number of valid actions. In this case forward, backward, right, left
     NO_DX_COUNT = 4 # number of times there's no change in distance before assuming crash
-    MEMORY_SIZE = 500000  # number of observations to remember
+    # number which helps decide the probability of random action
+    # formula is bool(EPSILON_CALCULATE/2 - random.randint(0, EPSILON_CALCULATE))
+    # e.g bool(10/2 - 4) = True => take random action
+    EPSILON_CALCULATE = 10 
+    MEMORY_SIZE = 50000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
-    OBSERVATION_STEPS = 50000.  # time steps to observe before training
+    OBSERVATION_STEPS = 5000.  # time steps to observe before training
     NO_DX_MEASUREMENT = 0.1 # dx in distance that's not considered forward motion
     MINI_BATCH_SIZE = 100  # size of mini batches
     STORE_SCORES_LEN = 200.
@@ -130,49 +134,36 @@ class DeepQPiCar(object):
         if self.crashed:
             self.crashed = False
             self.count_since_crash = 1
-            return dx_distance
+            self.reward = self.dx_distance
+            return
 
-        return .5*self.count_since_crash*dx_distance + dx_distance
+        self.reward = .5*self.count_since_crash*self.dx_distance + self.dx_distance
 
     def _set_state_and_action(self):
         """ """
         # first frame must be handled differently
         if self.last_state is None:
-            self._last_action = np.zeros(self.ACTIONS_COUNT)
-            self._last_action[0] = 1 # move forward
-            current_state = np.stack(tuple(self._get_normalized_frame() for _ in range(self.STATE_FRAMES)), axis=2)
+            self.last_action = np.zeros(self.ACTIONS_COUNT)
+            self.last_action[0] = 1 # move forward
+            self.current_state = np.stack(tuple(self._get_normalized_frame() for _ in range(self.STATE_FRAMES)), axis=2)
 
         else:
-            self._last_action = np.zeros(self.ACTIONS_COUNT)
-            self._last_action[random.randint(0,3)] = 1 # move forward
-            current_state = np.append(self.last_state[:, :, 1:], self._get_normalized_frame(), axis=2)
+            self.change = bool(EPSILON_CALCULATE - random.randint(0, EPSILON_CALCULATE))
+            if self.change:
+                self.last_action = np.zeros(self.ACTIONS_COUNT)
+                self.last_action[random.randint(0, ACTIONS_COUNT-1)] = 1
 
-    def _set_observation(self):
-        """ """
-        self._set_dx_distance()
-        self._set_state_and_action()
+            self.current_state = np.append(self.last_state[:, :, 1:], self._get_normalized_frame(), axis=2)
 
+    def _set_terminal_frame(self):
         self.terminal_frame = False
-
         if self.dx_distance < self.NO_DX_MEASUREMENT:
             self.nodx_counter += 1
             if self.nodx_counter == self.NO_DX_COUNT:
                 self.nodx_counter = 0
                 self.terminal_frame = True
 
-        observation = (
-            self.last_state,
-            self._last_action,
-            self._calculate_reward(),
-            current_state, 
-            self.terminal_frame)
-
-        self.observations.append(observation)
-        self.last_state = current_state
-
-        if len(self.observations) > self.MEMORY_SIZE:
-            self.observations.popleft()
-
+    def _correct_observation(self, observation):
         # only train if done observing
         if len(self.observations) > self.OBSERVATION_STEPS:
             self._run = False
@@ -187,6 +178,28 @@ class DeepQPiCar(object):
         # update the old values
         self.last_state = current_state
         return observation
+
+    def _set_observation(self):
+        """ """
+        self._set_dx_distance()
+        self._set_state_and_action()
+        self._set_terminal_frame()
+        self._calculate_reward()
+
+        observation = (
+            self.last_state,
+            self.last_action,
+            self.reward,
+            self.current_state, 
+            self.terminal_frame)
+
+        self.observations.append(observation)
+        self.last_state = current_state
+
+        if len(self.observations) > self.MEMORY_SIZE:
+            self.observations.popleft()
+
+        return self._correct_observation(observation)
 
     def _publish(self, obs):
         """ """
