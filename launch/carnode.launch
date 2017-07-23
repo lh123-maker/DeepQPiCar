@@ -1,6 +1,6 @@
 <launch>
   <group ns="picar">
-    <node pkg="DeepQPiCar" name="carnode" type="deepq_carnode.py"/>
+    <node pkg="deepq_pi_car" name="carnode" type="deepq_carnode.py"/>
   </group>
 </launch>
 
