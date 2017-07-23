@@ -12,45 +12,42 @@ input_layer, output_layer = None, None
 def train_cnn():
     pass
 
-def _create_ploy_graph():
-    """ """
-    model = '10k-poly-model/ploy_distance_10k_epoch-10000'
-
-    tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-
-    X = tf.placeholder(tf.float32)
-
-    Y_pred = tf.Variable(tf.random_normal([1]), name='bias')
-
-    for pow_i in range(1, 3):
-        W = tf.Variable(tf.random_normal([1]), name='weight_%d' % pow_i)
-        Y_pred = tf.add(tf.multiply(tf.pow(X, pow_i), W), Y_pred)
-
-    saver = tf.train.Saver()
-
-    sess = tf.Session()
-
-    saver.restore(sess, "{}/{}".format(tf_dir, model))
-
-    return Y_pred
-
-def calc_distance_from_router():
-    """ """
-    global Y_pred
-
-    signal_level = utils.get_signal_level_from_router('wlan0')
-    return Y_pred.eval(feed_dict={X:-53}, session=sess)[0]
-
-
-Y_pred = _create_ploy_graph()
-Observations = deque()
 
 class TensorFlowUtils(object):
 
     def __init__(self):
-        pass
+        
+        self.observations = deque()
+        self.Y_pred, self.poly_session = _create_ploy_graph()
 
-    def create_convolutional_network(state_frames, actions_count):
+    def calc_distance_from_router():
+        """ """
+        signal_level = utils.get_signal_level_from_router('wlan0')
+        return self.Y_pred.eval(feed_dict={X:signal_level}, session=self.poly_session)[0]
+
+    def _create_poly_graph():
+        """ """
+        model = '10k-poly-model/poly_distance_10k_epoch-10000'
+
+        tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+
+        X = tf.placeholder(tf.float32)
+
+        Y_pred = tf.Variable(tf.random_normal([1]), name='bias')
+
+        for pow_i in range(1, 3):
+            W = tf.Variable(tf.random_normal([1]), name='weight_%d' % pow_i)
+            Y_pred = tf.add(tf.multiply(tf.pow(X, pow_i), W), Y_pred)
+
+        saver = tf.train.Saver()
+
+        sess = tf.Session()
+
+        saver.restore(sess, "{}/{}".format(tf_dir, model))
+
+        return Y_pred, sess
+
+    def _create_convolutional_network(state_frames, actions_count):
         # network weights
         convolution_weights_1 = tf.Variable(tf.truncated_normal([8, 8, state_frames, 32], stddev=0.01))
 
@@ -97,4 +94,3 @@ class TensorFlowUtils(object):
         output_layer = tf.matmul(final_hidden_activations, feed_forward_weights_2) + feed_forward_bias_2
 
         return input_layer, output_layer
-
