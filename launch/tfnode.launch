@@ -1,6 +1,6 @@
 <launch>
   <group ns="tfbox">
-    <node pkg="deepq_pi_car" name="tfnode" type="deepq_tfnode.py"/>
+    <node pkg="deepq_pi_car" name="tfnode" type="deepq_tfnode.py" output="screen"/>
   </group>
 </launch>
 

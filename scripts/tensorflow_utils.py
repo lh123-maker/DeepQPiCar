@@ -7,8 +7,11 @@
 
 """
 import os
+import random
+
 from collections import deque
 
+import numpy as np
 import tensorflow as tf
 
 import utils
@@ -16,22 +19,27 @@ import utils
 class TensorFlowUtils(object):
 
     
-    img_width = 120
+    img_width = 640
     img_height = 120
     state_frames = 4
     actions_count = 4
 
     observations = deque()
 
-    mini_batch_size = 100
+    mini_batch_size = 3
 
+    LEARN_RATE = 1e-4
+    SAVE_EVERY_X_STEPS = 3
     FUTURE_REWARD_DISCOUNT = 0.1 # decay rate of past observations
-    OBSlast_state_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
+    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
 
     def __init__(self):
         """ """
+        self.time = 0
         self.X = tf.placeholder(tf.float32)
         self.Y_pred, self.poly_session = self._create_poly_graph()
+
+        self._create_convolutional_network()
 
     def calc_distance_from_router(self):
         """ """
@@ -60,6 +68,9 @@ class TensorFlowUtils(object):
 
     def _create_convolutional_network(self):
         """ """
+        session = tf.Session()
+        saver = tf.train.Saver()
+
         convolution_weights_1 = tf.Variable(tf.truncated_normal([8, 8, self.state_frames, 32], stddev=0.01))
 
         convolution_bias_1 = tf.Variable(tf.constant(0.01, shape=[32]))
@@ -75,7 +86,7 @@ class TensorFlowUtils(object):
         feed_forward_weights_2 = tf.Variable(tf.truncated_normal([256, self.actions_count], stddev=0.01))
         feed_forward_bias_2 = tf.Variable(tf.constant(0.01, shape=[self.actions_count]))
 
-        self.input_layer = tf.placeholder("float", [None, self.img_width, self.img_height, self.state_frames])
+        input_layer = tf.placeholder("float", [None, self.img_height, self.img_width, self.state_frames])
 
         hidden_convolutional_layer_1 = tf.nn.relu(
             tf.nn.conv2d(input_layer, convolution_weights_1, strides=[1, 4, 4, 1], padding="SAME") + convolution_bias_1)
@@ -102,7 +113,27 @@ class TensorFlowUtils(object):
         final_hidden_activations = tf.nn.relu(
             tf.matmul(hidden_convolutional_layer_3_flat, feed_forward_weights_1) + feed_forward_bias_1)
 
-        self.output_layer = tf.matmul(final_hidden_activations, feed_forward_weights_2) + feed_forward_bias_2
+        output_layer = tf.matmul(final_hidden_activations, feed_forward_weights_2) + feed_forward_bias_2
+
+
+        self.input_layer = input_layer
+        self.output_layer = output_layer
+        self.cnn_session = session
+        self.cnn_saver = saver
+
+        self.action = tf.placeholder("float", [None, self.actions_count])
+        self.target = tf.placeholder("float", [None])
+
+        readout_action = tf.reduce_sum(tf.multiply(self.output_layer, self.action), reduction_indices=1)
+
+        self.cost = tf.reduce_mean(tf.square(self.target - readout_action))
+        self.train_operation = tf.train.AdamOptimizer(self.LEARN_RATE).minimize(self.cost)
+
+        self.cnn_session.run(tf.global_variables_initializer())
+
+        model = 'models/convnet/convnet_1e-4'
+        tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        self.save_path =  "{}/{}".format(tf_dir, model)
 
     def train_cnn(self):
         """ """
@@ -115,8 +146,9 @@ class TensorFlowUtils(object):
         current_states = [d[self.OBS_CURRENT_STATE_INDEX] for d in mini_batch]
         agents_expected_reward = []
         # this gives us the agents expected reward for each action we might
-        agents_reward_per_action = self._session.run(self.output_layer, feed_dict={self.input_layer: current_states})
+        agents_reward_per_action = self.cnn_session.run(self.output_layer, feed_dict={self.input_layer: current_states})
         for i in range(len(mini_batch)):
+            self.time += 1
             if mini_batch[i][self.OBS_CRASH_INDEX]:
                 # this was a crash frame so there is no future reward...
                 agents_expected_reward.append(rewards[i])
@@ -124,12 +156,14 @@ class TensorFlowUtils(object):
                 agents_expected_reward.append(
                     rewards[i] + self.FUTURE_REWARD_DISCOUNT * np.max(agents_reward_per_action[i]))
 
+        actions = np.array(actions)
+        print("actions", actions.shape)
         # learn that these actions in these states lead to this reward
-        self._session.run(self._train_operation, feed_dict={
-            self._input_layer: previous_states,
-            self._action: actions,
-            self._target: agents_expected_reward})
+        self.cnn_session.run(self.train_operation, feed_dict={
+            self.input_layer: previous_states,
+            self.action: actions,
+            self.target: agents_expected_reward})
 
         # save checkpoints for later
-        if self._time % self.SAVE_EVERY_X_STEPS == 0:
-            self._saver.save(self._session, self._checkpoint_path + '/network', global_step=self._time)
+        if self.time % self.SAVE_EVERY_X_STEPS == 0:
+            self.cnn_saver.save(self.cnn_session, self.save_path, global_step=self.time)
