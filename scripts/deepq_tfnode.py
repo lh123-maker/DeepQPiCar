@@ -73,7 +73,7 @@ class DeepQTFNode(object):
     def _train_callback(self, msg):
         """ """
         if msg.data:
-            print("beginning training.  have collected {} observations".format(len(self._tf.observations)))
+            # print("beginning training.  have collected {} observations".format(len(self._tf.observations)))
             self._tf.train_cnn()
             self.publish_resume()
 
@@ -81,7 +81,7 @@ class DeepQTFNode(object):
         """ """
         msg = Bool()
         msg.data = True
-        self.publisher.publisher(msg)
+        self.publisher.publish(msg)
 
     def run(self):
         # imitate a thread

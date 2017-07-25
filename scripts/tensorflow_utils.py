@@ -7,6 +7,7 @@
 
 """
 import os
+import math
 import random
 
 from collections import deque
@@ -19,17 +20,17 @@ import utils
 class TensorFlowUtils(object):
 
     
-    img_width = 640
-    img_height = 120
+    img_width = 80
+    img_height = 80
     state_frames = 4
     actions_count = 4
 
     observations = deque()
 
-    mini_batch_size = 3
+    mini_batch_size = 50
 
     LEARN_RATE = 1e-4
-    SAVE_EVERY_X_STEPS = 3
+    SAVE_EVERY_X_STEPS = 50
     FUTURE_REWARD_DISCOUNT = 0.1 # decay rate of past observations
     OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
 
@@ -68,12 +69,11 @@ class TensorFlowUtils(object):
 
     def _create_convolutional_network(self):
         """ """
-        session = tf.Session()
-        saver = tf.train.Saver()
 
+        self.global_step = tf.Variable(0, trainable=False, name='global_step')
         convolution_weights_1 = tf.Variable(tf.truncated_normal([8, 8, self.state_frames, 32], stddev=0.01))
-
         convolution_bias_1 = tf.Variable(tf.constant(0.01, shape=[32]))
+        
         convolution_weights_2 = tf.Variable(tf.truncated_normal([4, 4, 32, 64], stddev=0.01))
         convolution_bias_2 = tf.Variable(tf.constant(0.01, shape=[64]))
 
@@ -86,7 +86,7 @@ class TensorFlowUtils(object):
         feed_forward_weights_2 = tf.Variable(tf.truncated_normal([256, self.actions_count], stddev=0.01))
         feed_forward_bias_2 = tf.Variable(tf.constant(0.01, shape=[self.actions_count]))
 
-        input_layer = tf.placeholder("float", [None, self.img_height, self.img_width, self.state_frames])
+        input_layer = tf.placeholder("float", [None, self.img_width, self.img_height, self.state_frames])
 
         hidden_convolutional_layer_1 = tf.nn.relu(
             tf.nn.conv2d(input_layer, convolution_weights_1, strides=[1, 4, 4, 1], padding="SAME") + convolution_bias_1)
@@ -115,11 +115,8 @@ class TensorFlowUtils(object):
 
         output_layer = tf.matmul(final_hidden_activations, feed_forward_weights_2) + feed_forward_bias_2
 
-
         self.input_layer = input_layer
         self.output_layer = output_layer
-        self.cnn_session = session
-        self.cnn_saver = saver
 
         self.action = tf.placeholder("float", [None, self.actions_count])
         self.target = tf.placeholder("float", [None])
@@ -127,43 +124,59 @@ class TensorFlowUtils(object):
         readout_action = tf.reduce_sum(tf.multiply(self.output_layer, self.action), reduction_indices=1)
 
         self.cost = tf.reduce_mean(tf.square(self.target - readout_action))
-        self.train_operation = tf.train.AdamOptimizer(self.LEARN_RATE).minimize(self.cost)
+        self.train_operation = tf.train.AdamOptimizer(self.LEARN_RATE).minimize(self.cost, global_step=self.global_step)
 
-        self.cnn_session.run(tf.global_variables_initializer())
-
-        model = 'models/convnet/convnet_1e-4'
+        model = 'models/convnet/3layers-1e-4'
         tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
         self.save_path =  "{}/{}".format(tf_dir, model)
 
+        self.cnn_session = tf.Session()
+        self.cnn_saver = tf.train.Saver()
+
+        if os.path.exists('{}/checkpoint'.format(self.save_path)):
+            chkpoint_state = tf.train.get_checkpoint_state(self.save_path)
+            self.cnn_saver.restore(self.cnn_session, chkpoint_state.model_checkpoint_path)
+        else:
+            self.cnn_session.run(tf.global_variables_initializer())
+
+
     def train_cnn(self):
         """ """
-        # sample a mini_batch to train on
-        mini_batch = random.sample(self.observations, self.mini_batch_size)
-        # get the batch variables
-        previous_states = [d[self.OBS_LAST_STATE_INDEX] for d in mini_batch]
-        actions = [d[self.OBS_ACTION_INDEX] for d in mini_batch]
-        rewards = [d[self.OBS_REWARD_INDEX] for d in mini_batch]
-        current_states = [d[self.OBS_CURRENT_STATE_INDEX] for d in mini_batch]
-        agents_expected_reward = []
-        # this gives us the agents expected reward for each action we might
-        agents_reward_per_action = self.cnn_session.run(self.output_layer, feed_dict={self.input_layer: current_states})
-        for i in range(len(mini_batch)):
-            self.time += 1
-            if mini_batch[i][self.OBS_CRASH_INDEX]:
-                # this was a crash frame so there is no future reward...
-                agents_expected_reward.append(rewards[i])
-            else:
-                agents_expected_reward.append(
-                    rewards[i] + self.FUTURE_REWARD_DISCOUNT * np.max(agents_reward_per_action[i]))
+        if os.path.exists('{}/checkpoint'.format(self.save_path)):
+            chkpoint_state = tf.train.get_checkpoint_state(self.save_path)
+            self.cnn_saver.restore(self.cnn_session, chkpoint_state.model_checkpoint_path)
 
-        actions = np.array(actions)
-        print("actions", actions.shape)
-        # learn that these actions in these states lead to this reward
-        self.cnn_session.run(self.train_operation, feed_dict={
-            self.input_layer: previous_states,
-            self.action: actions,
-            self.target: agents_expected_reward})
+        count = len(self.observations)
+        epochs = (count * math.log(count))/count
+
+        print("number of observations is {}.  Training for {} epochs".format(count, epochs))
+        for i in range(epochs):
+            # sample a mini_batch to train on
+            mini_batch = random.sample(self.observations, self.mini_batch_size-1)
+            # get the batch variables
+            previous_states = [d[self.OBS_LAST_STATE_INDEX] for d in mini_batch]
+            actions = [d[self.OBS_ACTION_INDEX] for d in mini_batch]
+            rewards = [d[self.OBS_REWARD_INDEX] for d in mini_batch]
+            current_states = [d[self.OBS_CURRENT_STATE_INDEX] for d in mini_batch]
+            agents_expected_reward = []
+            # this gives us the agents expected reward for each action we might
+            agents_reward_per_action = self.cnn_session.run(self.output_layer, feed_dict={self.input_layer: current_states})
+            for i in range(len(mini_batch)):
+                self.time += 1
+                if mini_batch[i][self.OBS_CRASH_INDEX]:
+                    # this was a crash frame so there is no future reward...
+                    agents_expected_reward.append(rewards[i])
+                else:
+                    agents_expected_reward.append(
+                        rewards[i] + self.FUTURE_REWARD_DISCOUNT * np.max(agents_reward_per_action[i]))
+
+            # learn that these actions in these states lead to this reward
+            self.cnn_session.run(self.train_operation, feed_dict={
+                self.input_layer: previous_states,
+                self.action: actions,
+                self.target: agents_expected_reward})
 
         # save checkpoints for later
-        if self.time % self.SAVE_EVERY_X_STEPS == 0:
-            self.cnn_saver.save(self.cnn_session, self.save_path, global_step=self.time)
+        global_step = tf.train.global_step(self.cnn_session, self.global_step)
+        self.cnn_saver.save(self.cnn_session, self.save_path+'/my_model', global_step=global_step)
+        print('one more training finished.  global_step: %s' % global_step)

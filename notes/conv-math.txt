@@ -1,0 +1,21 @@
+input shape = 120, 640, 4
+
+output = (W−F+2P)/S+1
+
+layer one:
+
+
+out 1 30, 160
+pool 1 = (30 - 2)/1 + 1 = 29
+pool 2 = (160 -2)/1 + 1 = 159
+
+
+input 29, 159
+pool 2 14
+ppol 2
+out 15, 80
+
+input 14, 79
+
+
+14, 79
