@@ -70,13 +70,8 @@ class DeepQPiCar(object):
     
     MEMORY_SIZE = 50000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
-    OBSERVATION_STEPS = 50  # time steps to observe before training
+    OBSERVATION_STEPS = 100  # time steps to observe before training
     NO_DX_MEASUREMENT = 0.1 # dx in distance that's not considered forward motion
-    
-    EXPLORE_STEPS = 500000.  # frames over which to anneal epsilon
-    FUTURE_REWARD_DISCOUNT = 0.99  # decay rate of past observations
-    FINAL_RANDOM_ACTION_PROB = 0.05  # final chance of an action being random
-    INITIAL_RANDOM_ACTION_PROB = 1.0  # starting chance of an action being random
 
     CHOICES = [(False, 80), (True, 20)]
 

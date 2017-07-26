@@ -27,10 +27,10 @@ class TensorFlowUtils(object):
 
     observations = deque()
 
-    mini_batch_size = 50
+    mini_batch_size = 100
 
     LEARN_RATE = 1e-4
-    SAVE_EVERY_X_STEPS = 50
+    SAVE_EVERY_X_STEPS = 100
     FUTURE_REWARD_DISCOUNT = 0.1 # decay rate of past observations
     OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
 
@@ -147,7 +147,7 @@ class TensorFlowUtils(object):
             self.cnn_saver.restore(self.cnn_session, chkpoint_state.model_checkpoint_path)
 
         count = len(self.observations)
-        epochs = (count * math.log(count))/count
+        epochs = int((count * math.log(count))/count)
 
         print("number of observations is {}.  Training for {} epochs".format(count, epochs))
         for i in range(epochs):

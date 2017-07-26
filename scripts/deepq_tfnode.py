@@ -37,8 +37,10 @@ Attributes:
     RECORDS (deque): List of Record objects each representing a parsed record.
 
 """
+import os
 import time
 import pickle
+import glob
 import base64
 
 import rospy
@@ -64,11 +66,27 @@ class DeepQTFNode(object):
 
         self.publisher = rospy.Publisher('/pi_car/cmd_resume', Bool, queue_size=1)
 
+        directory = 'pickles'
+        tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        self.save_path =  "{}/{}".format(tf_dir, directory)
+
     def _observation_callback(self, msg):
         """ """
         data = base64.b64decode(msg.data)
         observation = pickle.loads(data)
         self._tf.observations.append(observation)
+
+        if len(self._tf.observations) % 100 == 0:
+            
+            filename = str(round(time.time() * 1000))
+            with open('{}/{}.p'.format(self.save_path, filename), 'wb') as f:
+                pickle.dump(self._tf.observations, f)
+
+            files = glob.glob('{}/{}/*.p'.format(self.save_path, filename))
+            for name in files:
+                if not filename in name:
+                    os.remove(filename)
+
 
     def _train_callback(self, msg):
         """ """
