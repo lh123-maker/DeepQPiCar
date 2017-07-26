@@ -26,8 +26,12 @@ class AStar(object):
     data_array = map(ord, struct.pack('hh', *data))
     # print(data_array)
     # print(type(data_array))
-    self.bus.write_i2c_block_data(20, address, data_array)
-    time.sleep(0.0001)
+    try:
+      self.bus.write_i2c_block_data(20, address, data_array)
+    except IOError as err:
+      print(err)
+    finally:
+      time.sleep(0.001)
 
   def leds(self, red, yellow, green):
     self.write_pack(0, 'BBB', red, yellow, green)

@@ -9,6 +9,8 @@
 import os
 import math
 import random
+import glob
+import pickle
 
 from collections import deque
 
@@ -25,7 +27,7 @@ class TensorFlowUtils(object):
     state_frames = 4
     actions_count = 4
 
-    observations = deque()
+    
 
     mini_batch_size = 100
 
@@ -41,6 +43,16 @@ class TensorFlowUtils(object):
         self.Y_pred, self.poly_session = self._create_poly_graph()
 
         self._create_convolutional_network()
+
+        directory = 'pickles'
+        tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        save_path =  "{}/{}".format(tf_dir, directory)
+        
+        files = glob.glob('{}/*.p'.format(save_path))
+        if len(files) > 0:
+            self.observations = deque(pickle.load(open(files[0], 'rb')))
+        else:
+            self.observations = deque()
 
     def calc_distance_from_router(self):
         """ """

@@ -39,8 +39,10 @@ Attributes:
     RECORDS (deque): List of Record objects each representing a parsed record.
 
 """
+import os
 import base64
 import pickle
+import glob
 
 import random
 import rospy
@@ -91,7 +93,16 @@ class DeepQPiCar(object):
         self.crashed = False
         self.nodx_counter = 0
         self.distance_from_router = 0.
-        self.observations = deque()
+        
+        directory = 'pickles'
+        tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        save_path =  "{}/{}".format(tf_dir, directory)
+        
+        files = glob.glob('{}/*.p'.format(save_path))
+        if len(files) > 0:
+            self.observations = deque(pickle.load(open(files[0], 'rb')))
+        else:
+            self.observations = deque()
 
         self.width = 640
         self.height = 480
