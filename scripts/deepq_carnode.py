@@ -93,8 +93,8 @@ class DeepQPiCar(object):
         self.distance_from_router = 0.
         self.observations = deque()
 
-        self.width = 80
-        self.height = 80
+        self.width = 640
+        self.height = 480
         self.camera.resolution = (self.width, self.height)
         # self.camera.color_effects = (128,128) # turn camera to black and white
 
@@ -124,13 +124,13 @@ class DeepQPiCar(object):
         self.camera.capture(self.output, 'rgb')
 
         frame = np.array(self.output.array)
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        # frame = frame[-120:,:]
-        frame = (frame-np.min(frame))/(np.max(frame)-np.min(frame))
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        gray = gray[-150:,:]
+        frame = (gray-np.min(gray))/(np.max(gray)-np.min(gray))
 
         self.output.truncate(0)
 
-        return frame
+        return frame, gray
 
     def _set_dx_distance(self):
         """ """
@@ -154,7 +154,7 @@ class DeepQPiCar(object):
         if self.last_state is None:
             self.last_action = np.zeros(self.ACTIONS_COUNT)
             self.last_action[0] = 1 # move forward
-            self.last_state = np.stack(tuple(self._get_normalized_frame() for _ in range(self.STATE_FRAMES)), axis=2)
+            self.last_state = np.stack(tuple(self._get_normalized_frame()[0] for _ in range(self.STATE_FRAMES)), axis=2)
 
         else:
             self.change = weighted_choice(self.CHOICES)
@@ -162,11 +162,11 @@ class DeepQPiCar(object):
                 self.last_action = np.zeros(self.ACTIONS_COUNT)
                 self.last_action[random.randint(0, self.ACTIONS_COUNT-1)] = 1
 
-        frame = self._get_normalized_frame()
-        frame = np.reshape(frame, (self.height, self.width, 1))
+        frame, img = self._get_normalized_frame()
+        frame = np.reshape(frame, (150, self.width, 1))
         
         current_state = np.append(self.last_state[:, :, 1:], frame, axis=2)
-        return current_state
+        return current_state, img
 
     def _set_terminal_frame(self):
         self.terminal_frame = False
@@ -209,7 +209,7 @@ class DeepQPiCar(object):
         """ """
         self._set_dx_distance()
 
-        current_state = self._set_state_and_action()
+        current_state, img = self._set_state_and_action()
         
         self._set_terminal_frame()
         
@@ -220,7 +220,7 @@ class DeepQPiCar(object):
             self.last_action,
             self.reward,
             current_state, 
-            self.terminal_frame)
+            self.terminal_frame, img)
 
         self.observations.append(observation)
         self.last_state = current_state

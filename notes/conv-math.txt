@@ -1,21 +1,50 @@
-input shape = 120, 640, 4
+input shape = 150, 640
 
-output = (W−F+2P)/S+1
+final output to be 100
 
-layer one:
+S = 1
+P = 0
+Pool = 2x2
+
+### first layer:
+
+input = 150, 640
+
+(W−F+2P)/S+1 = (640-12 + 0) / (2) = 314
+
+## first pooling layer
+
+W = (W−F)/S+1 = (314-2)/2 = 156
+H = (H-F)/S+1 = (150-2)/2 = 74
+
+## output dims after Layer One
+
+74,157
 
 
-out 1 30, 160
-pool 1 = (30 - 2)/1 + 1 = 29
-pool 2 = (160 -2)/1 + 1 = 159
+### second layer:
 
+(W−F+2P)/S+1 = (156-12 + 0) / (2) = 72
 
-input 29, 159
-pool 2 14
-ppol 2
-out 15, 80
+## second pooling layer
 
-input 14, 79
+W = (W−F)/S+1 = (72-2)/2 = 35
+H = (H-F)/S+1 = (74-2)/2 = 36
 
+## output dims after Layer Two
 
-14, 79
+36, 37
+
+### second layer:
+
+(W−F+2P)/S+1 = (37-9 + 0) / (2) = 14
+
+## first pooling layer
+
+W = (W−F)/S+1 = (14-2)/2 = 6
+H = (H-F)/S+1 = (36-2)/2 = 17
+
+## output dims after Layer Three
+
+17,7
+

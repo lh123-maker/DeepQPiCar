@@ -20,8 +20,8 @@ import utils
 class TensorFlowUtils(object):
 
     
-    img_width = 80
-    img_height = 80
+    img_width = 640
+    img_height = 150
     state_frames = 4
     actions_count = 4
 
@@ -67,48 +67,84 @@ class TensorFlowUtils(object):
 
         return Y_pred, sess
 
+
+    def conv2d(self, x, W):
+        return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
+
+    def max_pool_2x2(self, x):
+        return tf.nn.max_pool(x, ksize=[1, 2, 2, 1],
+                        strides=[1, 2, 2, 1], padding='SAME')
+
+    def weight_variable(self, shape):
+        initial = tf.truncated_normal(shape, stddev=0.1)
+        return tf.Variable(initial)
+
+    def bias_variable(self, shape):
+        initial = tf.constant(0.1, shape=shape)
+        return tf.Variable(initial)
+
     def _create_convolutional_network(self):
         """ """
 
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
-        convolution_weights_1 = tf.Variable(tf.truncated_normal([8, 8, self.state_frames, 32], stddev=0.01))
-        convolution_bias_1 = tf.Variable(tf.constant(0.01, shape=[32]))
+
+        # convolution_weights_1 = tf.Variable(tf.truncated_normal([8, 8, self.state_frames, 32], stddev=0.01))
+        # convolution_bias_1 = tf.Variable(tf.constant(0.01, shape=[32]))
         
-        convolution_weights_2 = tf.Variable(tf.truncated_normal([4, 4, 32, 64], stddev=0.01))
-        convolution_bias_2 = tf.Variable(tf.constant(0.01, shape=[64]))
+        
 
-        convolution_weights_3 = tf.Variable(tf.truncated_normal([3, 3, 64, 64], stddev=0.01))
-        convolution_bias_3 = tf.Variable(tf.constant(0.01, shape=[64]))
+        input_layer = tf.placeholder("float", [None, self.img_height, self.img_width, self.state_frames])
 
-        feed_forward_weights_1 = tf.Variable(tf.truncated_normal([256, 256], stddev=0.01))
-        feed_forward_bias_1 = tf.Variable(tf.constant(0.01, shape=[256]))
 
-        feed_forward_weights_2 = tf.Variable(tf.truncated_normal([256, self.actions_count], stddev=0.01))
-        feed_forward_bias_2 = tf.Variable(tf.constant(0.01, shape=[self.actions_count]))
+        convolution_weights_1  = self.weight_variable([12, 12, self.state_frames, 32])
+        convolution_bias_1     = self.bias_variable([32])
 
-        input_layer = tf.placeholder("float", [None, self.img_width, self.img_height, self.state_frames])
+        convolution_weights_2  = self.weight_variable([12, 12, 32, 64])
+        convolution_bias_2     = self.bias_variable([64])
 
-        hidden_convolutional_layer_1 = tf.nn.relu(
-            tf.nn.conv2d(input_layer, convolution_weights_1, strides=[1, 4, 4, 1], padding="SAME") + convolution_bias_1)
+        convolution_weights_3  = self.weight_variable([9, 9, 64, 64])
+        convolution_bias_3     = self.bias_variable([64])
 
-        hidden_max_pooling_layer_1 = tf.nn.max_pool(hidden_convolutional_layer_1, ksize=[1, 2, 2, 1],
-                                        strides=[1, 2, 2, 1], padding="SAME")
+        convolution_weights_4  = self.weight_variable([9, 9, 64, 64])
+        convolution_bias_4     = self.bias_variable([64])
 
-        hidden_convolutional_layer_2 = tf.nn.relu(
-            tf.nn.conv2d(hidden_max_pooling_layer_1, convolution_weights_2, strides=[1, 2, 2, 1],
-                    padding="SAME") + convolution_bias_2)
+        convolution_weights_5  = self.weight_variable([7, 7, 64, 64])
+        convolution_bias_5     = self.bias_variable([64])
 
-        hidden_max_pooling_layer_2 = tf.nn.max_pool(hidden_convolutional_layer_2, ksize=[1, 2, 2, 1],
-                                                strides=[1, 2, 2, 1], padding="SAME")
+        convolution_weights_6  = self.weight_variable([7, 7, 64, 64])
+        convolution_bias_6     = self.bias_variable([64])
 
-        hidden_convolutional_layer_3 = tf.nn.relu(
-            tf.nn.conv2d(hidden_max_pooling_layer_2, convolution_weights_3,
-                    strides=[1, 1, 1, 1], padding="SAME") + convolution_bias_3)
+        convolution_weights_7  = self.weight_variable([5, 5, 64, 64])
+        convolution_bias_7     = self.bias_variable([64])
 
-        hidden_max_pooling_layer_3 = tf.nn.max_pool(hidden_convolutional_layer_3, ksize=[1, 2, 2, 1],
-                                                strides=[1, 2, 2, 1], padding="SAME")
+        feed_forward_weights_1 = self.weight_variable([640, 640])
+        feed_forward_bias_1    = self.bias_variable([640])
 
-        hidden_convolutional_layer_3_flat = tf.reshape(hidden_max_pooling_layer_3, [-1, 256])
+        feed_forward_weights_2 = self.weight_variable([640, self.actions_count])
+        feed_forward_bias_2    = self.bias_variable([self.actions_count])
+
+        hidden_convolutional_layer_1 = tf.nn.relu(self.conv2d(input_layer, convolution_weights_1) + convolution_bias_1)
+        hidden_max_pooling_layer_1   = self.max_pool_2x2(hidden_convolutional_layer_1)
+
+        hidden_convolutional_layer_2 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_1, convolution_weights_2) + convolution_bias_2)
+        hidden_max_pooling_layer_2   = self.max_pool_2x2(hidden_convolutional_layer_2)
+
+        hidden_convolutional_layer_3 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_2, convolution_weights_3) + convolution_bias_3)
+        hidden_max_pooling_layer_3   = self.max_pool_2x2(hidden_convolutional_layer_3)
+
+        hidden_convolutional_layer_4 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_3, convolution_weights_4) + convolution_bias_4)
+        hidden_max_pooling_layer_4   = self.max_pool_2x2(hidden_convolutional_layer_4)
+
+        hidden_convolutional_layer_5 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_4, convolution_weights_5) + convolution_bias_5)
+        hidden_max_pooling_layer_5   = self.max_pool_2x2(hidden_convolutional_layer_5)
+
+        hidden_convolutional_layer_6 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_5, convolution_weights_6) + convolution_bias_6)
+        hidden_max_pooling_layer_6   = self.max_pool_2x2(hidden_convolutional_layer_6)
+
+        hidden_convolutional_layer_7 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_6, convolution_weights_7) + convolution_bias_7)
+        hidden_max_pooling_layer_7   = self.max_pool_2x2(hidden_convolutional_layer_7)
+
+        hidden_convolutional_layer_3_flat = tf.reshape(hidden_max_pooling_layer_7, [-1, 640])
 
         final_hidden_activations = tf.nn.relu(
             tf.matmul(hidden_convolutional_layer_3_flat, feed_forward_weights_1) + feed_forward_bias_1)
