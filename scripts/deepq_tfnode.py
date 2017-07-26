@@ -86,7 +86,7 @@ class DeepQTFNode(object):
             files = glob.glob('{}/{}/*.p'.format(self.save_path, filename))
             for name in files:
                 if not filename in name:
-                    os.remove(filename)
+                    os.remove(name)
 
 
     def _train_callback(self, msg):

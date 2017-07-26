@@ -73,9 +73,11 @@ class DeepQPiCar(object):
     MEMORY_SIZE = 50000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
     OBSERVATION_STEPS = 100  # time steps to observe before training
-    NO_DX_MEASUREMENT = 0.1 # dx in distance that's not considered forward motion
+    NO_DX_MEASUREMENT = 0.01 # dx in distance that's not considered forward motion
 
     CHOICES = [(False, 80), (True, 20)]
+
+    MOVE_CHOICES = [(0, 38), (1, 12), (2, 25), (3, 25)]
 
     _tf = TensorFlowUtils()
 
@@ -94,18 +96,10 @@ class DeepQPiCar(object):
         self.nodx_counter = 0
         self.distance_from_router = 0.
         
-        directory = 'pickles'
-        tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-        save_path =  "{}/{}".format(tf_dir, directory)
-        
-        files = glob.glob('{}/*.p'.format(save_path))
-        if len(files) > 0:
-            self.observations = deque(pickle.load(open(files[0], 'rb')))
-        else:
-            self.observations = deque()
+        self.observations = deque()
 
-        self.width = 640
-        self.height = 480
+        self.width = 160
+        self.height = 120
         self.camera.resolution = (self.width, self.height)
         # self.camera.color_effects = (128,128) # turn camera to black and white
 
@@ -136,7 +130,7 @@ class DeepQPiCar(object):
 
         frame = np.array(self.output.array)
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        gray = gray[-150:,:]
+        gray = gray[-45:,:]
         frame = (gray-np.min(gray))/(np.max(gray)-np.min(gray))
 
         self.output.truncate(0)
@@ -171,10 +165,10 @@ class DeepQPiCar(object):
             self.change = weighted_choice(self.CHOICES)
             if self.change:
                 self.last_action = np.zeros(self.ACTIONS_COUNT)
-                self.last_action[random.randint(0, self.ACTIONS_COUNT-1)] = 1
+                self.last_action[weighted_choice(self.MOVE_CHOICES)] = 1
 
         frame, img = self._get_normalized_frame()
-        frame = np.reshape(frame, (150, self.width, 1))
+        frame = np.reshape(frame, (45, self.width, 1))
         
         current_state = np.append(self.last_state[:, :, 1:], frame, axis=2)
         return current_state, img
@@ -261,13 +255,13 @@ class DeepQPiCar(object):
 
     def _move(self, action):
         if action == 0: # move forward
-            self.move(50,50)
+            self.move(60, 60)
         elif action == 1: # move backward
-            self.move(-50,-50)
+            self.move(-50, -50)
         elif action == 2: # move right
-            self.move(60,40)
+            self.move(65, 40)
         else:# move left
-            self.move(40,60)
+            self.move(40, 65)
 
     def move(self, left, right):
         try:
