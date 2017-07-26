@@ -73,7 +73,7 @@ class DeepQPiCar(object):
     MEMORY_SIZE = 50000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
     OBSERVATION_STEPS = 100  # time steps to observe before training
-    NO_DX_MEASUREMENT = 0.01 # dx in distance that's not considered forward motion
+    NO_DX_MEASUREMENT = 0.005 # dx in distance that's not considered forward motion
 
     CHOICES = [(False, 80), (True, 20)]
 
@@ -201,11 +201,11 @@ class DeepQPiCar(object):
         self.move(0,0)
         # move backwards
         self.move(-100,-100)
-        time.sleep(2.5)
+        time.sleep(1)
         self.move(-100,-75)
-        time.sleep(2.5)
+        time.sleep(1)
         self.move(-75,-100)
-        time.sleep(2.5)
+        time.sleep(1)
         self.move(0,0)
         time.sleep(1)
 
