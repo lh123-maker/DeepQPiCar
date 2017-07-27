@@ -27,10 +27,9 @@ class TensorFlowUtils(object):
     state_frames = 4
     actions_count = 4
 
-    mini_batch_size = 100
+    mini_batch_size = 3
 
     LEARN_RATE = 1e-4
-    SAVE_EVERY_X_STEPS = 100
     FUTURE_REWARD_DISCOUNT = 0.1 # decay rate of past observations
     OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
 
@@ -78,8 +77,8 @@ class TensorFlowUtils(object):
         return Y_pred, sess
 
 
-    def conv2d(self, x, W):
-        return tf.nn.conv2d(x, W, strides=[1, 2, 2, 1], padding='SAME')
+    def conv2d(self, x, W, strides=[1, 1, 1, 1]):
+        return tf.nn.conv2d(x, W, strides=strides, padding='SAME')
 
     def max_pool_2x2(self, x):
         return tf.nn.max_pool(x, ksize=[1, 2, 2, 1],
@@ -100,25 +99,19 @@ class TensorFlowUtils(object):
 
         input_layer = tf.placeholder("float", [None, self.img_height, self.img_width, self.state_frames])
 
-        convolution_weights_1  = self.weight_variable([9, 9, self.state_frames, 32])
+        convolution_weights_1  = self.weight_variable([5, 5, self.state_frames, 32])
         convolution_bias_1     = self.bias_variable([32])
 
-        convolution_weights_2  = self.weight_variable([9, 9, 32, 64])
-        convolution_bias_2     = self.bias_variable([64])
+        convolution_weights_2  = self.weight_variable([5, 5, 32, 32])
+        convolution_bias_2     = self.bias_variable([32])
 
-        convolution_weights_3  = self.weight_variable([7, 7, 64, 64])
+        convolution_weights_3  = self.weight_variable([3, 3, 32, 64])
         convolution_bias_3     = self.bias_variable([64])
 
-        convolution_weights_4  = self.weight_variable([5, 5, 64, 64])
-        convolution_bias_4     = self.bias_variable([64])
+        # convolution_weights_4  = self.weight_variable([5, 5, 32, 32])
+        # convolution_bias_4     = self.bias_variable([32])
 
-        feed_forward_weights_1 = self.weight_variable([256, 256])
-        feed_forward_bias_1    = self.bias_variable([256])
-
-        feed_forward_weights_2 = self.weight_variable([256, self.actions_count])
-        feed_forward_bias_2    = self.bias_variable([self.actions_count])
-
-        hidden_convolutional_layer_1 = tf.nn.relu(self.conv2d(input_layer, convolution_weights_1) + convolution_bias_1)
+        hidden_convolutional_layer_1 = tf.nn.relu(self.conv2d(input_layer, convolution_weights_1, strides=[1, 2, 2, 1]) + convolution_bias_1)
         hidden_max_pooling_layer_1   = self.max_pool_2x2(hidden_convolutional_layer_1)
 
         hidden_convolutional_layer_2 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_1, convolution_weights_2) + convolution_bias_2)
@@ -127,15 +120,25 @@ class TensorFlowUtils(object):
         hidden_convolutional_layer_3 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_2, convolution_weights_3) + convolution_bias_3)
         hidden_max_pooling_layer_3   = self.max_pool_2x2(hidden_convolutional_layer_3)
 
-        hidden_convolutional_layer_4 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_3, convolution_weights_4) + convolution_bias_4)
-        hidden_max_pooling_layer_4   = self.max_pool_2x2(hidden_convolutional_layer_4)
+        # hidden_convolutional_layer_4 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_3, convolution_weights_4) + convolution_bias_4)
+        # hidden_max_pooling_layer_4   = self.max_pool_2x2(hidden_convolutional_layer_4)
 
-        hidden_convolutional_layer_3_flat = tf.reshape(hidden_convolutional_layer_4, [-1, 256])
+        shape = hidden_max_pooling_layer_3.get_shape().as_list()
+
+        hidden_convolutional_layer_3_flat = tf.reshape(hidden_max_pooling_layer_3, [-1, shape[1]*shape[2]*64])
+
+        fully_connected_weights_1 = self.weight_variable([shape[1]*shape[2]*64, 1024])
+
+        fully_connected_bias_1    = self.bias_variable([1024])
+
+        fully_connected_weights_2 = self.weight_variable([1024, self.actions_count])
+        
+        fully_connected_bias_2    = self.bias_variable([self.actions_count])
 
         final_hidden_activations = tf.nn.relu(
-            tf.matmul(hidden_convolutional_layer_3_flat, feed_forward_weights_1) + feed_forward_bias_1)
+            tf.matmul(hidden_convolutional_layer_3_flat, fully_connected_weights_1) + fully_connected_bias_1)
 
-        output_layer = tf.matmul(final_hidden_activations, feed_forward_weights_2) + feed_forward_bias_2
+        output_layer = tf.matmul(final_hidden_activations, fully_connected_weights_2) + fully_connected_bias_2
 
         self.input_layer = input_layer
         self.output_layer = output_layer

@@ -76,14 +76,14 @@ class DeepQTFNode(object):
         observation = pickle.loads(data)
         self._tf.observations.append(observation)
 
-        if len(self._tf.observations) % 25 == 0:
+        if len(self._tf.observations) % 5 == 0:
             
             filename = str(round(time.time() * 1000))
             with open('{}/{}.p'.format(self.save_path, filename), 'wb') as f:
                 pickle.dump(self._tf.observations, f)
                 print("wrote {} to file".format(len(self._tf.observations)))
 
-            files = glob.glob('{}/{}/*.p'.format(self.save_path, filename))
+            files = glob.glob('{}/*.p'.format(self.save_path))
             for name in files:
                 if not filename in name:
                     os.remove(name)

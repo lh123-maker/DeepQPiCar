@@ -72,12 +72,12 @@ class DeepQPiCar(object):
     
     MEMORY_SIZE = 50000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
-    OBSERVATION_STEPS = 100  # time steps to observe before training
-    NO_DX_MEASUREMENT = 0.005 # dx in distance that's not considered forward motion
+    OBSERVATION_STEPS = 3  # time steps to observe before training
+    NO_DX_MEASUREMENT = 0.05 # dx in distance that's not considered forward motion
 
     CHOICES = [(False, 80), (True, 20)]
 
-    MOVE_CHOICES = [(0, 38), (1, 12), (2, 25), (3, 25)]
+    MOVE_CHOICES = [(0, 40), (2, 30), (3, 30)]
 
     _tf = TensorFlowUtils()
 
@@ -141,6 +141,7 @@ class DeepQPiCar(object):
         """ """
         current_distance = self._tf.calc_distance_from_router()
         self.dx_distance = abs(self.distance_from_router - current_distance)
+        # print(self.dx_distance, 'calculated')
         self.distance_from_router = current_distance
 
     def _calculate_reward(self):
@@ -175,6 +176,7 @@ class DeepQPiCar(object):
 
     def _set_terminal_frame(self):
         self.terminal_frame = False
+        # print(self.dx_distance, 'in set terminal')
         if self.dx_distance <= self.NO_DX_MEASUREMENT:
             self.nodx_counter += 1
             if self.nodx_counter == self.NO_DX_COUNT:
@@ -201,13 +203,13 @@ class DeepQPiCar(object):
         self.move(0,0)
         # move backwards
         self.move(-100,-100)
-        time.sleep(1)
+        time.sleep(1.5)
         self.move(-100,-75)
-        time.sleep(1)
+        time.sleep(1.5)
         self.move(-75,-100)
-        time.sleep(1)
+        time.sleep(1.5)
         self.move(0,0)
-        time.sleep(1)
+        time.sleep(1.5)
 
 
     def _set_observation(self):
@@ -280,7 +282,7 @@ class DeepQPiCar(object):
                 if obs:
                     self._move(np.argmax(self.last_action))
                     self._publish(obs)
-                    time.sleep(2.5)
+                    time.sleep(.5)
                 else:
                     self.move(0, 0)
                     self.publish_train = True
