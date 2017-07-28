@@ -66,44 +66,43 @@ weighted_choice = lambda s : random.choice(sum(([v]*wt for v,wt in s),[]))
 
 class DeepQPiCar(object):
     """ """
-    ACTIONS_COUNT = 10  # number of valid actions. In this case forward, backward, right, left
-    NO_DX_COUNT = 4 # number of times there's no change in distance before assuming crash
+    ACTIONS_COUNT = 20  # number of valid actions. In this case forward, backward, right, left
     
-    MEMORY_SIZE = 50000  # number of observations to remember
+    MEMORY_SIZE = 5000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
-    OBSERVATION_STEPS = 3  # time steps to observe before training
-    NO_DX_MEASUREMENT = 0.05 # dx in distance that's not considered forward motion
+    OBSERVATION_STEPS = 100  # time steps to observe before training
 
-    CHOICES = [(False, 80), (True, 20)]
+    CHOICES = [(False, 50), (True, 50)]
 
     ACTION_CHOICES = [
         
-        ((50, 50), 10),
-        ((55, 55), 10),
-        ((60, 60), 10),
-        ((65, 65), 10),
+        ((35, 35), 5),
+        ((40, 40), 5),
+        ((45, 45), 5),
+        ((50, 50), 5),
 
-        ((80, 40), 10),
-        ((40, 80), 10),
+        ((40, 20), 5),
+        ((40, 20), 5),
         
-        ((90, 45), 10),
-        ((45, 90), 10),
+        ((55, 15), 5),
+        ((15, 55), 5),
         
-        ((100,50), 10),
-        ((50,100), 10),
-        ]
+        ((60, 20), 5),
+        ((20, 60), 5),
 
-    RECOVER_CHOICES = [
-        ((-100,-100), 10),
-        ((-50,-50), 10),
-        ((-50,-75), 10),
-        ((-75,-50), 10),
-        ((-75,-100), 10),
-        ((-100,-75), 10),
-        ((-40,-60), 10),
-        ((-60,-40), 10),
-        ((-55,-65), 10),
-        ((-65,-55), 10)
+        ((-35, -35), 5),
+        ((-40, -40), 5),
+        ((-45, -45), 5),
+        ((-50, -50), 5),
+
+        ((-40, -20), 5),
+        ((-40, -20), 5),
+        
+        ((-55, -15), 5),
+        ((-15, -55), 5),
+        
+        ((-60, -20), 5),
+        ((-20, -60), 5),
         ]
 
     _tf = TensorFlowUtils()
@@ -163,21 +162,15 @@ class DeepQPiCar(object):
 
         return frame, gray
 
-    def _set_dx_distance(self):
-        """ """
-        current_distance = self._tf.calc_distance_from_router()
-        self.dx_distance = self.distance_from_router - current_distance
-        self.distance_from_router = current_distance
-
     def _calculate_reward(self):
         """ """
-        if self.crashed:
-            self.crashed = False
-            self.count_since_crash = 1
-            self.reward = self.dx_distance
-            return
-
-        self.reward = .5*self.count_since_crash*self.dx_distance + self.dx_distance
+        current_distance = self._tf.calc_distance_from_router()
+        self.reward = self.distance_from_router - current_distance
+        if self.reward > 0:
+            self.reward *= 1.5
+        else:
+            self.reward *= -.75
+        self.distance_from_router = current_distance
 
     def _set_state_and_action(self):
         """ """
@@ -192,7 +185,7 @@ class DeepQPiCar(object):
             if self.change:
                 self.last_action = np.zeros(self.ACTIONS_COUNT)
                 self.move_args = weighted_choice(self.ACTION_CHOICES)
-                index = self.ACTION_CHOICES.index((self.move_args, 10))
+                index = self.ACTION_CHOICES.index((self.move_args, 5))
                 self.last_action[index] = 1
 
         frame, img = self._get_normalized_frame()
@@ -201,59 +194,17 @@ class DeepQPiCar(object):
         current_state = np.append(self.last_state[:, :, 1:], frame, axis=2)
         return current_state, img
 
-    def _set_terminal_frame(self):
+    def _publish_observation(self):
         """ """
-        self.terminal_frame = False
-        if self.dx_distance <= self.NO_DX_MEASUREMENT:
-            self.nodx_counter += 1
-            if self.nodx_counter == self.NO_DX_COUNT:
-                self.nodx_counter = 0
-                self.terminal_frame = True
-
-    def _correct_observation(self, observation):
-        """ """
-        # only train if done observing
-        if len(self.observations) % self.OBSERVATION_STEPS == 0:
-            # self._run = False
-            return None
-
-        if self.terminal_frame:
-            self._implement_recovery()
-            self.last_state = None
-            return observation
-
-        return observation
-
-    def _implement_recovery(self):
-        """ """
-        self.move(0,0)
-        time.sleep(3)
-        self.move(0,0)
-        
-        for i in range(2):
-            args = weighted_choice(self.RECOVER_CHOICES)
-            self.move(*args)
-            time.sleep(1)
-        self.move(0, 0)
-        time.sleep(1.5)
-
-
-    def _set_observation(self):
-        """ """
-        self._set_dx_distance()
-
-        current_state, img = self._set_state_and_action()
-        
-        self._set_terminal_frame()
-        
         self._calculate_reward()
 
+        current_state, img = self._set_state_and_action()
         observation = (
             self.last_state,
             self.last_action,
             self.reward,
             current_state, 
-            self.terminal_frame, img)
+            img)
 
         self.observations.append(observation)
         self.last_state = current_state
@@ -261,7 +212,17 @@ class DeepQPiCar(object):
         if len(self.observations) > self.MEMORY_SIZE:
             self.observations.popleft()
 
-        return self._correct_observation(observation)
+        self._publish(observation)
+
+        if len(self.observations) > 0 and len(self.observations) % self.OBSERVATION_STEPS == 0:
+            # stop the car while training
+            self.move(0, 0)
+            self.publish_train = True
+            self._wait = True
+            while self._wait:
+                self._train()
+                time.sleep(5)
+                self.publish_train = False
 
     def _publish(self, obs):
         """ """
@@ -294,20 +255,10 @@ class DeepQPiCar(object):
         """ """
         while self._run:
             if not self._wait:
-                obs = self._set_observation()
+                self._publish_observation()
+                self._move(np.argmax(self.last_action))
+                time.sleep(1.5)
 
-                if obs:
-                    self._move(np.argmax(self.last_action))
-                    self._publish(obs)
-                    time.sleep(.5)
-                else:
-                    self.move(0, 0)
-                    self.publish_train = True
-                    self._wait = True
-                    while self._wait:
-                        self._train()
-                        time.sleep(5)
-                        self.publish_train = False
 
 if __name__ == '__main__':
     node = DeepQPiCar()

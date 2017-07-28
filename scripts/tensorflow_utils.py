@@ -25,13 +25,13 @@ class TensorFlowUtils(object):
     img_width = 320
     img_height = 90
     state_frames = 4
-    actions_count = 10
+    actions_count = 20
 
-    mini_batch_size = 3
+    mini_batch_size = 100
 
     LEARN_RATE = 1e-4
     FUTURE_REWARD_DISCOUNT = 0.1 # decay rate of past observations
-    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
+    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX = range(4)
 
     def __init__(self):
         """ """
@@ -142,10 +142,10 @@ class TensorFlowUtils(object):
 
         self.global_step = tf.Variable(0, trainable=False, name='global_step')
 
-        self.action = tf.placeholder("float", [None, self.actions_count])
-        self.target = tf.placeholder("float", [None])
+        self.action = tf.placeholder("float", [None, self.actions_count], name='actions')
+        self.target = tf.placeholder("float", [None], name='target_action')
 
-        self.input_layer = tf.placeholder("float", [None, self.img_height, self.img_width, self.state_frames])
+        self.input_layer = tf.placeholder("float", [None, self.img_height, self.img_width, self.state_frames], name='state')
 
         conv1_layer = self.conv2d(self.input_layer, [9, 9, self.state_frames, 32], [32], 'conv1_layer')
         conv2_layer = self.conv2d(conv1_layer, [7, 7, 32, 64], [64], 'conv2_layer')
@@ -192,47 +192,6 @@ class TensorFlowUtils(object):
         else:
             self.cnn_session.run(tf.global_variables_initializer())
 
-        # # convolution_weights_1  = self.weight_variable([9, 9, self.state_frames, 32])
-        # # convolution_bias_1     = self.bias_variable([32])
-
-        # #  = 
-
-        # # convolution_weights_2  = self.weight_variable([7, 7, 32, 64])
-        # # convolution_bias_2     = self.bias_variable([64])
-
-        # # convolution_weights_3  = self.weight_variable([5, 5, 64, 64])
-        # # convolution_bias_3     = self.bias_variable([64])
-
-        # # convolution_weights_4  = self.weight_variable([3, 3, 64, 64])
-        # # convolution_bias_4     = self.bias_variable([64])
-
-        # hidden_convolutional_layer_1 = tf.nn.relu(self.conv2d(input_layer, convolution_weights_1) + convolution_bias_1)
-        # hidden_max_pooling_layer_1   = self.max_pool_2x2(hidden_convolutional_layer_1)
-
-        
-
-        # hidden_convolutional_layer_2 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_1, convolution_weights_2) + convolution_bias_2)
-        # hidden_max_pooling_layer_2   = self.max_pool_2x2(hidden_convolutional_layer_2)
-
-        # hidden_convolutional_layer_3 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_2, convolution_weights_3) + convolution_bias_3)
-        # hidden_max_pooling_layer_3   = self.max_pool_2x2(hidden_convolutional_layer_3)
-
-        # hidden_convolutional_layer_4 = tf.nn.relu(self.conv2d(hidden_max_pooling_layer_3, convolution_weights_4) + convolution_bias_4)
-        # hidden_max_pooling_layer_4   = self.max_pool_2x2(hidden_convolutional_layer_4)
-
-        # fully_connected_weights_1 = self.weight_variable([shape[1]*shape[2]*64, 1024])
-
-        # fully_connected_bias_1    = self.bias_variable([1024])
-
-        # fully_connected_weights_2 = self.weight_variable([1024, self.actions_count])
-        
-        # fully_connected_bias_2    = self.bias_variable([self.actions_count])
-
-        # final_hidden_activations = tf.nn.relu(
-        #     tf.matmul(hidden_convolutional_layer_3_flat, fully_connected_weights_1) + fully_connected_bias_1)
-
-        # output_layer = tf.matmul(final_hidden_activations, fully_connected_weights_2) + fully_connected_bias_2
-
 
     def train_cnn(self):
         """ """
@@ -241,7 +200,7 @@ class TensorFlowUtils(object):
             self.cnn_saver.restore(self.cnn_session, chkpoint_state.model_checkpoint_path)
 
         count = len(self.observations)
-        epochs = int((count * math.log(count))/count)
+        epochs = max(int((count * math.log(count))/count), 1)
 
         print("number of observations is {}.  Training for {} epochs".format(count, epochs))
         for i in range(epochs):
@@ -254,30 +213,26 @@ class TensorFlowUtils(object):
             rewards = [d[self.OBS_REWARD_INDEX] for d in mini_batch]
             current_states = [d[self.OBS_CURRENT_STATE_INDEX] for d in mini_batch]
             agents_expected_reward = []
+
             # this gives us the agents expected reward for each action we might
-            summary, agents_reward_per_action = self.cnn_session.run([merged, self.output_layer],
+            agents_reward_per_action = self.cnn_session.run(self.output_layer,
                 feed_dict={self.input_layer: current_states,
                 self.keep_prob: 0.5})
-            self._writer.add_summary(summary, global_step)
             
             for i in range(len(mini_batch)):
                 self.time += 1
-                if mini_batch[i][self.OBS_CRASH_INDEX]:
-                    # this was a crash frame so there is no future reward...
-                    agents_expected_reward.append(rewards[i])
-                else:
-                    agents_expected_reward.append(
+                agents_expected_reward.append(
                         rewards[i] + self.FUTURE_REWARD_DISCOUNT * np.max(agents_reward_per_action[i]))
 
             # learn that these actions in these states lead to this reward
-            summary, _ = self.cnn_session.run(self.train_operation, feed_dict={
+            summary, _ = self.cnn_session.run([self.merged, self.train_operation], feed_dict={
                 self.input_layer: previous_states,
                 self.action: actions,
                 self.target: agents_expected_reward,
                 self.keep_prob: 0.5})
 
             self._writer.add_summary(summary, global_step)
-            
+
         # save checkpoints for later
         global_step = tf.train.global_step(self.cnn_session, self.global_step)
         self.cnn_saver.save(self.cnn_session, self.save_path+'/my_model', global_step=global_step)
