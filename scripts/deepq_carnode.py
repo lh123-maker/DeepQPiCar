@@ -66,9 +66,8 @@ weighted_choice = lambda s : random.choice(sum(([v]*wt for v,wt in s),[]))
 
 class DeepQPiCar(object):
     """ """
-    LEARN_RATE = 1e-4
-    ACTIONS_COUNT = 4  # number of valid actions. In this case forward, backward, right, left
-    NO_DX_COUNT = 2 # number of times there's no change in distance before assuming crash
+    ACTIONS_COUNT = 10  # number of valid actions. In this case forward, backward, right, left
+    NO_DX_COUNT = 4 # number of times there's no change in distance before assuming crash
     
     MEMORY_SIZE = 50000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
@@ -77,7 +76,35 @@ class DeepQPiCar(object):
 
     CHOICES = [(False, 80), (True, 20)]
 
-    MOVE_CHOICES = [(0, 40), (2, 30), (3, 30)]
+    ACTION_CHOICES = [
+        
+        ((50, 50), 10),
+        ((55, 55), 10),
+        ((60, 60), 10),
+        ((65, 65), 10),
+
+        ((80, 40), 10),
+        ((40, 80), 10),
+        
+        ((90, 45), 10),
+        ((45, 90), 10),
+        
+        ((100,50), 10),
+        ((50,100), 10),
+        ]
+
+    RECOVER_CHOICES = [
+        ((-100,-100), 10),
+        ((-50,-50), 10),
+        ((-50,-75), 10),
+        ((-75,-50), 10),
+        ((-75,-100), 10),
+        ((-100,-75), 10),
+        ((-40,-60), 10),
+        ((-60,-40), 10),
+        ((-55,-65), 10),
+        ((-65,-55), 10)
+        ]
 
     _tf = TensorFlowUtils()
 
@@ -85,6 +112,7 @@ class DeepQPiCar(object):
         """ """
         rospy.init_node('deepq_carnode')
 
+        self.move_args = (0, 0)
         self.rate = rospy.Rate(2) # send 2 observations per second
         self.camera = picamera.PiCamera()
         self.camera.vflip = True
@@ -94,14 +122,13 @@ class DeepQPiCar(object):
         self.last_state = None
         self.crashed = False
         self.nodx_counter = 0
-        self.distance_from_router = 0.
+        self.distance_from_router = self._tf.calc_distance_from_router()
         
         self.observations = deque()
 
-        self.width = 160
-        self.height = 120
+        self.width = 320
+        self.height = 240
         self.camera.resolution = (self.width, self.height)
-        # self.camera.color_effects = (128,128) # turn camera to black and white
 
         self.publish_train = False
         self.trainer = rospy.Publisher('/pi_car/start_training', Bool, queue_size=1)
@@ -122,7 +149,6 @@ class DeepQPiCar(object):
         """ """
         self._wait = False
         self._run = True
-        # self.run()
 
     def _get_normalized_frame(self):
         """ """
@@ -130,7 +156,7 @@ class DeepQPiCar(object):
 
         frame = np.array(self.output.array)
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        gray = gray[-45:,:]
+        gray = gray[-90:,:]
         frame = (gray-np.min(gray))/(np.max(gray)-np.min(gray))
 
         self.output.truncate(0)
@@ -140,8 +166,7 @@ class DeepQPiCar(object):
     def _set_dx_distance(self):
         """ """
         current_distance = self._tf.calc_distance_from_router()
-        self.dx_distance = abs(self.distance_from_router - current_distance)
-        # print(self.dx_distance, 'calculated')
+        self.dx_distance = self.distance_from_router - current_distance
         self.distance_from_router = current_distance
 
     def _calculate_reward(self):
@@ -166,17 +191,19 @@ class DeepQPiCar(object):
             self.change = weighted_choice(self.CHOICES)
             if self.change:
                 self.last_action = np.zeros(self.ACTIONS_COUNT)
-                self.last_action[weighted_choice(self.MOVE_CHOICES)] = 1
+                self.move_args = weighted_choice(self.ACTION_CHOICES)
+                index = self.ACTION_CHOICES.index((self.move_args, 10))
+                self.last_action[index] = 1
 
         frame, img = self._get_normalized_frame()
-        frame = np.reshape(frame, (45, self.width, 1))
+        frame = np.reshape(frame, (90, self.width, 1))
         
         current_state = np.append(self.last_state[:, :, 1:], frame, axis=2)
         return current_state, img
 
     def _set_terminal_frame(self):
+        """ """
         self.terminal_frame = False
-        # print(self.dx_distance, 'in set terminal')
         if self.dx_distance <= self.NO_DX_MEASUREMENT:
             self.nodx_counter += 1
             if self.nodx_counter == self.NO_DX_COUNT:
@@ -184,6 +211,7 @@ class DeepQPiCar(object):
                 self.terminal_frame = True
 
     def _correct_observation(self, observation):
+        """ """
         # only train if done observing
         if len(self.observations) % self.OBSERVATION_STEPS == 0:
             # self._run = False
@@ -194,21 +222,19 @@ class DeepQPiCar(object):
             self.last_state = None
             return observation
 
-        
         return observation
 
     def _implement_recovery(self):
+        """ """
         self.move(0,0)
         time.sleep(3)
         self.move(0,0)
-        # move backwards
-        self.move(-100,-100)
-        time.sleep(1.5)
-        self.move(-100,-75)
-        time.sleep(1.5)
-        self.move(-75,-100)
-        time.sleep(1.5)
-        self.move(0,0)
+        
+        for i in range(2):
+            args = weighted_choice(self.RECOVER_CHOICES)
+            self.move(*args)
+            time.sleep(1)
+        self.move(0, 0)
         time.sleep(1.5)
 
 
@@ -237,8 +263,6 @@ class DeepQPiCar(object):
 
         return self._correct_observation(observation)
 
-
-
     def _publish(self, obs):
         """ """
         msg = String()
@@ -256,14 +280,7 @@ class DeepQPiCar(object):
             self.trainer.publish(msg)
 
     def _move(self, action):
-        if action == 0: # move forward
-            self.move(60, 60)
-        elif action == 1: # move backward
-            self.move(-50, -50)
-        elif action == 2: # move right
-            self.move(65, 40)
-        else:# move left
-            self.move(40, 65)
+        self.move(*self.move_args)
 
     def move(self, left, right):
         try:

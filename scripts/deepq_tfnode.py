@@ -56,6 +56,8 @@ class DeepQTFNode(object):
 
     def __init__(self):
         """ """
+        self._tf._create_convolutional_network()
+
         rospy.init_node('deepq_tfnode')
 
         rospy.Subscriber('/pi_car/observation',
@@ -76,7 +78,7 @@ class DeepQTFNode(object):
         observation = pickle.loads(data)
         self._tf.observations.append(observation)
 
-        if len(self._tf.observations) % 5 == 0:
+        if len(self._tf.observations) % 2 == 0:
             
             filename = str(round(time.time() * 1000))
             with open('{}/{}.p'.format(self.save_path, filename), 'wb') as f:
