@@ -31,7 +31,7 @@ class TensorFlowUtils(object):
 
     LEARN_RATE = 1e-4
     FUTURE_REWARD_DISCOUNT = 0.1 # decay rate of past observations
-    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX = range(4)
+    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
 
     def __init__(self):
         """ """
@@ -202,6 +202,7 @@ class TensorFlowUtils(object):
         count = len(self.observations)
         epochs = max(int((count * math.log(count))/count), 1)
 
+        stuck_index = 0
         print("number of observations is {}.  Training for {} epochs".format(count, epochs))
         for i in range(epochs):
             global_step = tf.train.global_step(self.cnn_session, self.global_step)
@@ -220,8 +221,12 @@ class TensorFlowUtils(object):
                 self.keep_prob: 0.5})
             
             for i in range(len(mini_batch)):
-                self.time += 1
-                agents_expected_reward.append(
+                if mini_batch[i][self.OBS_CRASH_INDEX]:
+                    # this was a crash frame so there is no future reward...
+                    stuck_index += 1
+                    agents_expected_reward.append(rewards[i])
+                else:
+                    agents_expected_reward.append(
                         rewards[i] + self.FUTURE_REWARD_DISCOUNT * np.max(agents_reward_per_action[i]))
 
             # learn that these actions in these states lead to this reward
@@ -233,7 +238,9 @@ class TensorFlowUtils(object):
 
             self._writer.add_summary(summary, global_step)
 
+            print('I was stuck {} times'.format(stuck_index))
         # save checkpoints for later
         global_step = tf.train.global_step(self.cnn_session, self.global_step)
         self.cnn_saver.save(self.cnn_session, self.save_path+'/my_model', global_step=global_step)
         print('one more training finished.  global_step: %s' % global_step)
+
