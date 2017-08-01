@@ -74,34 +74,64 @@ class DeepQPiCar(object):
 
     CHOICES = [(False, 50), (True, 50)]
 
+    # ACTION_CHOICES = [
+        
+    #     ((65, 65), 8),
+    #     ((65, 65), 8),
+    #     ((65, 65), 8),
+    #     ((65, 65), 8),
+    #     ((-65, -65), 2),
+        
+
+    #     ((75, 65), 8),
+    #     ((75, 50), 8),
+    #     ((75, 35), 8),
+    #     ((75, 50), 2),
+    #     ((-75, -35), 2),
+
+    #     ((65, 75), 8),
+    #     ((50, 75), 8),
+    #     ((35, 75), 8),
+    #     ((65, 75), 2),
+    #     ((-50, -75), 2),
+
+    #     ((-65, -65), 2),
+    #     ((-65, -65), 2),
+    #     ((-65, -65), 2),
+    #     ((-75, -65), 2),    
+    #     ((-35, -75), 2),
+
+    #     ]
+
     ACTION_CHOICES = [
         
         ((65, 65), 8),
         ((65, 65), 8),
         ((65, 65), 8),
         ((65, 65), 8),
-        ((-65, -65), 2),
+        ((65, 65), 2),
         
 
         ((75, 65), 8),
         ((75, 50), 8),
         ((75, 35), 8),
         ((75, 50), 2),
-        ((-75, -35), 2),
+        ((75, 35), 2),
 
         ((65, 75), 8),
         ((50, 75), 8),
         ((35, 75), 8),
         ((65, 75), 2),
-        ((-50, -75), 2),
+        ((50, 75), 2),
 
-        ((-65, -65), 2),
-        ((-65, -65), 2),
-        ((-65, -65), 2),
-        ((-75, -65), 2),    
-        ((-35, -75), 2),
+        ((65, 65), 2),
+        ((65, 65), 2),
+        ((65, 65), 2),
+        ((75, 65), 2),    
+        ((35, 75), 2),
 
         ]
+
 
     _tf = TensorFlowUtils()
 
@@ -119,7 +149,12 @@ class DeepQPiCar(object):
         self.last_state = None
         self.crashed = False
         self.dead_counter = 0
-        self.distance_from_router = self._tf.calc_distance_from_router()
+        to_average = []
+        for i in range(3):
+            to_average.append(self._tf.calc_distance_from_router())
+
+        self.distance_from_router = sum(to_average)/3.
+        print('my distance', self.distance_from_router)
         
         self.observations = deque()
 
@@ -163,8 +198,13 @@ class DeepQPiCar(object):
 
     def _calculate_reward(self):
         """ """
-        current_distance = self._tf.calc_distance_from_router()
+        to_average = []
+        for i in range(3):
+            to_average.append(self._tf.calc_distance_from_router())
+
+        current_distance = sum(to_average)/3.
         self.reward = current_distance - self.distance_from_router
+        self.distance_from_router = current_distance
         print('my reward', self.reward, 'and my distance', current_distance)
         if self.reward == 0.:
             self.dead_counter += 1
@@ -181,7 +221,7 @@ class DeepQPiCar(object):
         elif self.reward < -.1:
             self.reward *= -.75
 
-        self.distance_from_router = current_distance
+        
 
     def _set_state_and_action(self):
         """ """

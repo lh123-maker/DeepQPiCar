@@ -56,7 +56,7 @@ class TensorFlowUtils(object):
 
     def _create_poly_graph(self):
         """ """
-        model = 'models/25k-poly-model-1e-3/25k-poly-model-1e-3'
+        model = 'models/poly_model/poly-model-1e-3'
 
         tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
