@@ -12,6 +12,10 @@ class KalmanFilter(object):
                  obs_error_in_position,
                  obs_error_in_velocity):
 
+        self.obs_Error = 0.
+        self.w = 0.
+        self.q = 0.
+
         self.I = np.array([[1, 0], [0, 1]])
         self.A = np.array([[1, delta_t], [0, 1]])
         self.B = np.array([[.5 * (delta_t**2), delta_t]])
@@ -35,7 +39,7 @@ class KalmanFilter(object):
             [(obs_error_in_position * obs_error_in_velocity), obs_error_in_velocity**2]
         ])
 
-        self.obs_Error = 0.
+        
 
     def _adjust_measured_observation(self, observed_position, observed_velocity):
         obs_X = np.array([[observed_position], [observed_velocity]])
@@ -43,10 +47,10 @@ class KalmanFilter(object):
 
     def _calculate_predicted_state(self, acceleration):
         self.predicted_state = (
-            self.A * self.previous_state) + (self.B * acceleration)
+            self.A * self.previous_state) + (self.B * acceleration) + self.w
 
     def _calculate_predicted_covariance(self):
-        self.P = (self.A * self.previous_P * self.A.T)
+        self.P = (self.A * self.previous_P * self.A.T) + self.q
 
     def _update_predicted_convariance(self):
         self.previous_P = np.array(
@@ -70,3 +74,8 @@ class KalmanFilter(object):
         self._update_predicted_convariance()
 
         return self.previous_state[0][0]
+
+if __name__ == '__main__':
+    kf = KalmanFilter(1, 1.5, .5, .1, .3, .4, .3, .8)
+    for i in range(20):
+        print(kf.get_current_position(2.5, .8, .1))
