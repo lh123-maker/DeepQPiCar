@@ -58,89 +58,79 @@ import numpy as np
 from std_msgs.msg import String, Bool
 import matplotlib.image as mpimg
 
+import utils
+
 from tensorflow_utils import TensorFlowUtils
+from kalman_filter import KalmanFilter
 from a_star import AStar
 
-import random
-weighted_choice = lambda s : random.choice(sum(([v]*wt for v,wt in s),[]))
+
+def weighted_choice(s): return random.choice(
+    sum(([v] * wt for v, wt in s), []))
+
 
 class DeepQPiCar(object):
     """ """
-    ACTIONS_COUNT = 20  # number of valid actions. In this case forward, backward, right, left
-    
+    ACTIONS_COUNT = 4  # number of valid actions. In this case forward, backward, right, left
+
     MEMORY_SIZE = 5000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
     OBSERVATION_STEPS = 100  # time steps to observe before training
 
-    CHOICES = [(False, 50), (True, 50)]
+    CHOICES = [(False, 25), (True, 75)]
 
-    # ACTION_CHOICES = [
-        
-    #     ((65, 65), 8),
-    #     ((65, 65), 8),
-    #     ((65, 65), 8),
-    #     ((65, 65), 8),
-    #     ((-65, -65), 2),
-        
-
-    #     ((75, 65), 8),
-    #     ((75, 50), 8),
-    #     ((75, 35), 8),
-    #     ((75, 50), 2),
-    #     ((-75, -35), 2),
-
-    #     ((65, 75), 8),
-    #     ((50, 75), 8),
-    #     ((35, 75), 8),
-    #     ((65, 75), 2),
-    #     ((-50, -75), 2),
-
-    #     ((-65, -65), 2),
-    #     ((-65, -65), 2),
-    #     ((-65, -65), 2),
-    #     ((-75, -65), 2),    
-    #     ((-35, -75), 2),
-
-    #     ]
+    ACTIONS = [(65, 65), (75, 35), (35, 75), (-65, -65)]
 
     ACTION_CHOICES = [
-        
-        ((65, 65), 8),
-        ((65, 65), 8),
-        ((65, 65), 8),
-        ((65, 65), 8),
-        ((65, 65), 2),
-        
 
-        ((75, 65), 8),
-        ((75, 50), 8),
+        ((65, 65), 2),
+        ((65, 65), 2),
+        ((65, 65), 2),
+        ((65, 65), 2),
+        ((65, 65), 2),
+
         ((75, 35), 8),
-        ((75, 50), 2),
-        ((75, 35), 2),
+        ((75, 35), 8),
+        ((75, 35), 8),
+        ((75, 35), 8),
+        ((75, 35), 8),
 
-        ((65, 75), 8),
-        ((50, 75), 8),
         ((35, 75), 8),
-        ((65, 75), 2),
-        ((50, 75), 2),
+        ((35, 75), 8),
+        ((35, 75), 8),
+        ((35, 75), 8),
+        ((35, 75), 8),
 
-        ((65, 65), 2),
-        ((65, 65), 2),
-        ((65, 65), 2),
-        ((75, 65), 2),    
-        ((35, 75), 2),
+        ((-65, -65), 2),
+        ((-65, -65), 2),
+        ((-65, -65), 2),
+        ((-65, -65), 2),
+        ((-65, -65), 2),
 
-        ]
+    ]
 
+    calc_error_in_position = .01
+    calc_error_in_velocity = .0001
+    obs_error_in_position = .05
+    obs_error_in_velocity = .0005
 
     _tf = TensorFlowUtils()
+
+    _kf = KalmanFilter(
+        1, # delta t is one second
+        1.0,  # approaximate distance of starting point
+        .005,
+        .001,
+        calc_error_in_position,
+        calc_error_in_velocity,
+        obs_error_in_position,
+        obs_error_in_velocity)
 
     def __init__(self):
         """ """
         rospy.init_node('deepq_carnode')
 
-        self.move_args = (0, 0)
-        self.rate = rospy.Rate(2) # send 2 observations per second
+        self.rate = rospy.Rate(2)  # send 2 observations per second
         self.camera = picamera.PiCamera()
         self.camera.vflip = True
         self.camera.hflip = True
@@ -149,13 +139,7 @@ class DeepQPiCar(object):
         self.last_state = None
         self.crashed = False
         self.dead_counter = 0
-        to_average = []
-        for i in range(3):
-            to_average.append(self._tf.calc_distance_from_router())
 
-        self.distance_from_router = sum(to_average)/3.
-        print('my distance', self.distance_from_router)
-        
         self.observations = deque()
 
         self.width = 320
@@ -164,19 +148,23 @@ class DeepQPiCar(object):
 
         self.publish_train = False
         self.terminal_frame = False
-        self.trainer = rospy.Publisher('/pi_car/start_training', Bool, queue_size=1)
+        self.trainer = rospy.Publisher(
+            '/pi_car/start_training', Bool, queue_size=1)
 
         self.pub = rospy.Publisher('/pi_car/observation',
-            String,
-            queue_size=15,
-            latch=True)
+                                   String,
+                                   queue_size=15,
+                                   latch=True)
 
         rospy.Subscriber('/pi_car/cmd_resume', Bool, self.resume)
 
         self._run = True
         self._wait = False
-        self.count_since_crash = 1
         self.driver = AStar()
+
+        self.previous_controls = (65, 65)
+        self.current_controls = (75, 35)
+        self.distance_from_router = 1.0
 
     def resume(self, msg):
         """ """
@@ -189,8 +177,8 @@ class DeepQPiCar(object):
 
         frame = np.array(self.output.array)
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        gray = gray[-90:,:]
-        frame = (gray-np.min(gray))/(np.max(gray)-np.min(gray))
+        gray = gray[-90:, :]
+        frame = (gray - np.min(gray)) / (np.max(gray) - np.min(gray))
 
         self.output.truncate(0)
 
@@ -198,69 +186,72 @@ class DeepQPiCar(object):
 
     def _calculate_reward(self):
         """ """
-        to_average = []
-        for i in range(3):
-            to_average.append(self._tf.calc_distance_from_router())
+        observed_distance = utils.get_distance_from_router()
 
-        current_distance = sum(to_average)/3.
+        current_distance = self._kf.get_current_position(
+            observed_distance,
+            utils.get_velocity_from_motors((65, 65)),
+            utils.get_acceleration_from_motors((65, 65), (75, 35))
+        )
+
         self.reward = current_distance - self.distance_from_router
-        self.distance_from_router = current_distance
-        print('my reward', self.reward, 'and my distance', current_distance)
-        if self.reward == 0.:
-            self.dead_counter += 1
-            if self.dead_counter >= 2:
-                print('I am stuck!')
-                self.terminal_frame = True
-        else:
-            self.terminal_frame = False
-            self.dead_counter = 0
+        self.distance_from_router = float(current_distance)
 
-        if self.reward > .1:
-            self.reward *= 1.5
+        print('my reward', self.reward, 'observed distance',
+              observed_distance, 'current distance', current_distance)
 
-        elif self.reward < -.1:
-            self.reward *= -.75
+        # if self.reward == 0.:
+        #     self.dead_counter += 1
+        #     if self.dead_counter >= 2:
+        #         print('I am stuck!')
+        #         self.terminal_frame = True
+        # else:
+        #     self.terminal_frame = False
+        #     self.dead_counter = 0
 
-        
+        # if self.reward > .1:
+        #     self.reward *= 1.5
 
-    def _set_state_and_action(self):
+        # elif self.reward < -.1:
+        #     self.reward *= -.75
+
+    def _set_state(self):
         """ """
         # first frame must be handled differently
         if self.last_state is None:
             self.last_action = np.zeros(self.ACTIONS_COUNT)
-            self.last_action[0] = 1 # move forward
-            self.last_state = np.stack(tuple(self._get_normalized_frame()[0] for _ in range(self.STATE_FRAMES)), axis=2)
-
-        else:
-            self.change = weighted_choice(self.CHOICES)
-            if self.change:
-                self.last_action = np.zeros(self.ACTIONS_COUNT)
-                self.move_args = weighted_choice(self.ACTION_CHOICES)
-                try:
-                    index = self.ACTION_CHOICES.index((self.move_args, 8))
-                except ValueError as e:
-                    index = self.ACTION_CHOICES.index((self.move_args, 2))
-
-                self.last_action[index] = 1
+            self.last_action[0] = 1  # move forward
+            self.last_state = np.stack(tuple(self._get_normalized_frame()[
+                                       0] for _ in range(self.STATE_FRAMES)), axis=2)
 
         frame, img = self._get_normalized_frame()
         frame = np.reshape(frame, (90, self.width, 1))
-        
+
         current_state = np.append(self.last_state[:, :, 1:], frame, axis=2)
         return current_state, img
 
+    def _set_action(self):
+        self.change = weighted_choice(self.CHOICES)
+        if self.change:
+            self.last_action = np.zeros(self.ACTIONS_COUNT)
+            self.current_controls = weighted_choice(self.ACTION_CHOICES)
+            index = self.ACTIONS.index(self.current_controls)
+            self.last_action[index] = 1
+
     def _publish_observation(self):
         """ """
+        current_state, img = self._set_state()
+        self._set_action()
         self._calculate_reward()
 
-        current_state, img = self._set_state_and_action()
         observation = (
             self.last_state,
             self.last_action,
             self.reward,
-            current_state, 
+            current_state,
             img,
-            self.terminal_frame)
+            self.terminal_frame
+        )
 
         self.observations.append(observation)
         self.last_state = current_state
@@ -297,7 +288,7 @@ class DeepQPiCar(object):
             self.trainer.publish(msg)
 
     def _move(self, action):
-        self.move(*self.move_args)
+        self.move(*action)
 
     def move(self, left, right):
         try:
@@ -312,8 +303,8 @@ class DeepQPiCar(object):
         while self._run:
             if not self._wait:
                 self._publish_observation()
-                self._move(np.argmax(self.last_action))
-                time.sleep(1.5)
+                self._move(self.current_controls)
+                time.sleep(1.0)
 
 
 if __name__ == '__main__':

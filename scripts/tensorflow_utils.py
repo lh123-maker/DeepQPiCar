@@ -35,9 +35,6 @@ class TensorFlowUtils(object):
 
     def __init__(self):
         """ """
-        self.time = 0
-        self.X = tf.placeholder(tf.float32)
-        self.Y_pred, self.poly_session = self._create_poly_graph()
 
         directory = 'pickles'
         tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -53,26 +50,6 @@ class TensorFlowUtils(object):
         """ """
         signal_level = utils.get_signal_level_from_router('wlan0')
         return self.Y_pred.eval(feed_dict={ self.X : signal_level}, session=self.poly_session)[0]
-
-    def _create_poly_graph(self):
-        """ """
-        model = 'models/poly_model/poly-model-1e-3'
-
-        tf_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-
-        Y_pred = tf.Variable(tf.random_normal([1]), name='bias')
-
-        for pow_i in range(1, 3):
-            W = tf.Variable(tf.random_normal([1]), name='weight_%d' % pow_i)
-            Y_pred = tf.add(tf.multiply(tf.pow(self.X, pow_i), W), Y_pred)
-
-        saver = tf.train.Saver()
-
-        sess = tf.Session()
-
-        saver.restore(sess, "{}/{}".format(tf_dir, model))
-
-        return Y_pred, sess
 
     def variable_summaries(self, var):
         """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
