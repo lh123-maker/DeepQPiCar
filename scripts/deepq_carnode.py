@@ -75,7 +75,7 @@ class DeepQPiCar(object):
 
     MEMORY_SIZE = 5000  # number of observations to remember
     STATE_FRAMES = 4  # number of frames to store in the state
-    OBSERVATION_STEPS = 100  # time steps to observe before training
+    OBSERVATION_STEPS = 75  # time steps to observe before training
 
     CHOICES = [(False, 25), (True, 75)]
 
@@ -83,43 +83,23 @@ class DeepQPiCar(object):
 
     ACTION_CHOICES = [
 
-        ((65, 65), 2),
-        ((65, 65), 2),
-        ((65, 65), 2),
-        ((65, 65), 2),
-        ((65, 65), 2),
-
-        ((75, 35), 8),
-        ((75, 35), 8),
-        ((75, 35), 8),
-        ((75, 35), 8),
-        ((75, 35), 8),
-
-        ((35, 75), 8),
-        ((35, 75), 8),
-        ((35, 75), 8),
-        ((35, 75), 8),
-        ((35, 75), 8),
-
-        ((-65, -65), 2),
-        ((-65, -65), 2),
-        ((-65, -65), 2),
-        ((-65, -65), 2),
-        ((-65, -65), 2),
-
+        ((65, 65), 5),
+        ((75, 35), 40),
+        ((35, 75), 40),
+        ((-65, -65), 15),
     ]
 
     calc_error_in_position = .01
     calc_error_in_velocity = .0001
-    obs_error_in_position = .05
-    obs_error_in_velocity = .0005
+    obs_error_in_position = .1
+    obs_error_in_velocity = .001
 
     _tf = TensorFlowUtils()
 
     _kf = KalmanFilter(
-        1, # delta t is one second
-        1.0,  # approaximate distance of starting point
-        .005,
+        1,    # delta t is one second
+        .8,  # approaximate distance of starting point
+        .05,
         .001,
         calc_error_in_position,
         calc_error_in_velocity,
@@ -165,6 +145,8 @@ class DeepQPiCar(object):
         self.previous_controls = (65, 65)
         self.current_controls = (75, 35)
         self.distance_from_router = 1.0
+        self.recovery_count = 0
+        self.reward_is_stuck = -.005
 
     def resume(self, msg):
         """ """
@@ -186,7 +168,7 @@ class DeepQPiCar(object):
 
     def _calculate_reward(self):
         """ """
-        observed_distance = utils.get_distance_from_router()
+        observed_distance = round(utils.get_distance_from_router(), 3)
 
         current_distance = self._kf.get_current_position(
             observed_distance,
@@ -194,26 +176,36 @@ class DeepQPiCar(object):
             utils.get_acceleration_from_motors((65, 65), (75, 35))
         )
 
-        self.reward = current_distance - self.distance_from_router
+        current_distance = round(current_distance, 3)
+        self.reward = round(current_distance - self.distance_from_router, 3)
         self.distance_from_router = float(current_distance)
 
         print('my reward', self.reward, 'observed distance',
               observed_distance, 'current distance', current_distance)
 
-        # if self.reward == 0.:
-        #     self.dead_counter += 1
-        #     if self.dead_counter >= 2:
-        #         print('I am stuck!')
-        #         self.terminal_frame = True
-        # else:
-        #     self.terminal_frame = False
-        #     self.dead_counter = 0
+        if current_distance > 1.:
+            print('.............', current_distance)
+            self.reward_is_stuck = .0
+        else:
+            self.reward_is_stuck = -.005
 
-        # if self.reward > .1:
-        #     self.reward *= 1.5
+        if self.reward < self.reward_is_stuck:
+            self.dead_counter += 1
+            if self.dead_counter >= 3:
+                print('I am stuck!')
+                self.terminal_frame = True
+                self.dead_counter = 0
+        else:
+            self.terminal_frame = False
+            self.dead_counter = 0
 
-        # elif self.reward < -.1:
-        #     self.reward *= -.75
+        if self.reward > 0.:
+            self.reward *= 1.5
+
+        else:
+            self.reward *= -.1
+
+        
 
     def _set_state(self):
         """ """
@@ -231,6 +223,17 @@ class DeepQPiCar(object):
         return current_state, img
 
     def _set_action(self):
+        if self.terminal_frame:
+            print('attempting recovery')
+            self._set_recovery_action()
+            if self.recovery_count > 3:
+                print('done with recovery')
+                self.recovery_count = 0
+                self.terminal_frame = False
+
+            if self.recovery_count:
+                return
+
         self.change = weighted_choice(self.CHOICES)
         if self.change:
             self.last_action = np.zeros(self.ACTIONS_COUNT)
@@ -238,11 +241,19 @@ class DeepQPiCar(object):
             index = self.ACTIONS.index(self.current_controls)
             self.last_action[index] = 1
 
+    def _set_recovery_action(self):
+        self.recovery_count += 1
+        self.last_action = np.zeros(self.ACTIONS_COUNT)
+        self.current_controls = (-65, -65)
+        index = self.ACTIONS.index(self.current_controls)
+        self.last_action[index] = 1
+
     def _publish_observation(self):
         """ """
         current_state, img = self._set_state()
         self._set_action()
         self._calculate_reward()
+        
 
         observation = (
             self.last_state,

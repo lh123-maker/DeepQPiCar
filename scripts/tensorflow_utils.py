@@ -25,13 +25,13 @@ class TensorFlowUtils(object):
     img_width = 320
     img_height = 90
     state_frames = 4
-    actions_count = 20
+    actions_count = 4
 
-    mini_batch_size = 100
+    mini_batch_size = 75
 
     LEARN_RATE = 1e-4
     FUTURE_REWARD_DISCOUNT = 0.1 # decay rate of past observations
-    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_CRASH_INDEX = range(5)
+    OBS_LAST_STATE_INDEX, OBS_ACTION_INDEX, OBS_REWARD_INDEX, OBS_CURRENT_STATE_INDEX, OBS_IMG_INDEX, OBS_CRASH_INDEX = range(6)
 
     def __init__(self):
         """ """
