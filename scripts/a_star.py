@@ -60,3 +60,18 @@ class AStar(object):
   def test_write8(self):
     self.bus.write_i2c_block_data(20, 0, [0,0,0,0,0,0,0,0])
     time.sleep(0.0001)
+
+  def joystck(self, power):
+    PWM_MAX = 255
+    if power < 0:
+      # Reverse
+      pwm = int(PWM_MAX * power)
+      if abs(pwm) > abs(PWM_MAX):
+        pwm = -PWM_MAX
+    else:
+      # Forward / stopped
+      pwm = int(PWM_MAX * power)
+      if pwm > PWM_MAX:
+        pwm = PWM_MAX
+
+    return pwm

@@ -25,7 +25,7 @@ class TensorFlowUtils(object):
     img_width = 320
     img_height = 90
     state_frames = 4
-    actions_count = 4
+    actions_count = 20
 
     mini_batch_size = 75
 
@@ -165,7 +165,8 @@ class TensorFlowUtils(object):
 
         if os.path.exists('{}/checkpoint'.format(self.save_path)):
             chkpoint_state = tf.train.get_checkpoint_state(self.save_path)
-            self.cnn_saver.restore(self.cnn_session, chkpoint_state.model_checkpoint_path)
+            model_checkpoint_path = chkpoint_state.model_checkpoint_path.replace('sameh',  os.environ.get('USER'))
+            self.cnn_saver.restore(self.cnn_session, model_checkpoint_path)
         else:
             self.cnn_session.run(tf.global_variables_initializer())
 
@@ -221,3 +222,10 @@ class TensorFlowUtils(object):
         self.cnn_saver.save(self.cnn_session, self.save_path+'/my_model', global_step=global_step)
         print('one more training finished.  global_step: %s' % global_step)
 
+    def choose_next_action(self, current_states):
+        current_states = np.reshape(current_states, (-1,)+current_states.shape)
+        agents_reward_per_action = self.cnn_session.run(self.output_layer,
+                feed_dict={self.input_layer: current_states,
+                self.keep_prob: 1.})
+        
+        return agents_reward_per_action
